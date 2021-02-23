@@ -1,3 +1,7 @@
 log:
   level: info
   disable_sentry: true
+deployer:
+  private_key:
+  gas_price:
+  gas_limit:

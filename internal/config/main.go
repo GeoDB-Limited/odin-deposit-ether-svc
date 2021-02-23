@@ -7,6 +7,7 @@ import (
 
 type Config interface {
 	EthereumConfig() EthereumConfig
+	DeployerConfig() DeployerConfig
 
 	comfig.Logger
 	Ether
@@ -14,6 +15,7 @@ type Config interface {
 
 type config struct {
 	ethereumConfig EthereumConfig
+	deployerConfig comfig.Once
 
 	getter kv.Getter
 	once   comfig.Once
