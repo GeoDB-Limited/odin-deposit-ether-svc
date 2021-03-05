@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/odin/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -19,13 +20,20 @@ type Service struct {
 	log    *logan.Entry
 	config config.Config
 	eth    *ethclient.Client
+	odin   *client.OdinClient
 }
 
 func New(cfg config.Config) *Service {
+	/*	odin, err := odin.NewConnector(cfg.Odin()).Builder()
+		if err != nil {
+			cfg.Log().WithError(err).Fatal("failed to make builder")
+		}*/
+
 	return &Service{
 		log:    cfg.Log(),
 		eth:    cfg.EtherClient(),
 		config: cfg,
+		// odin: odin,
 	}
 }
 
@@ -38,15 +46,19 @@ func (s *Service) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	contract, err := s.deployContract(ctx)
+	contractAddress, err := s.deployContract(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to deploy contract")
 	}
 
 	fields := logan.F{}
-	fields["contract"] = contract.Hex()
+	fields["contract"] = contractAddress.Hex()
 	s.log.WithFields(fields).Info("contract deployed")
 
+	/*	if err := s.odin.SetEtherBridgeAddress(contractAddress); err != nil {
+			return errors.Wrap(err, "failed to set contract address")
+		}
+	*/
 	return nil
 }
 
@@ -71,7 +83,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to retrieve account nonce")
 	}
 
-	address, _, _, err := generated.DeployOdinBridge(
+	contractAddress, _, _, err := generated.DeployOdinBridge(
 		&bind.TransactOpts{
 			From:     crypto.PubkeyToAddress(*publicKeyECDSA),
 			Nonce:    big.NewInt(int64(nonce)),
@@ -87,5 +99,5 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to submit contract tx")
 	}
 
-	return &address, nil
+	return &contractAddress, nil
 }
