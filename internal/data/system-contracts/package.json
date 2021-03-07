@@ -1,0 +1,17 @@
+{
+  "name": "system-contracts",
+  "version": "1.0.0",
+  "description": "Odin bridge contracts",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "solidity"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@openzeppelin/contracts": "^2.3.0"
+  }
+}

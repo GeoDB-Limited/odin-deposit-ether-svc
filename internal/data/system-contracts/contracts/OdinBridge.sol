@@ -1,15 +1,66 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.7.0;
 
-contract OdinBridge {
-    constructor() {}
+import "./AddressStorage.sol";
+import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-    event UserDeposited(address indexed _user, uint256 _depositAmount, string _odinAddress);
+contract OdinBridge is Ownable {
+    AddressStorage supportedTokens;
 
+    event EtherDeposited(address indexed _userAddress, string _odinAddress, uint256 _depositAmount);
+    event TokenDeposited(address indexed _userAddress, string _odinAddress, address _tokenAddress, uint256 _depositAmount);
+
+    constructor(address[] memory _supportedTokens) {
+        supportedTokens = new AddressStorage(_supportedTokens);
+    }
+
+    /**
+    * @notice Deposits ether
+    * @param _odinAddress Address in the Odin chain
+    * @return True if everything went well
+    */
     function deposit(string memory _odinAddress) external payable returns (bool) {
         require(msg.value > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
 
-        emit UserDeposited(msg.sender, msg.value, _odinAddress);
+        emit EtherDeposited(msg.sender, _odinAddress, msg.value);
+        return true;
+    }
+
+    /**
+    * @notice Deposits ERC20 compatible tokens
+    * @param _tokenAddress Address of the ERC20 compatible token contract
+    * @param _odinAddress Address in the Odin chain
+    * @param _depositAmount Amount to deposit
+    * @return True if everything went well
+    */
+    function deposit(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount) returns (bool) {
+        require(supportedTokens.contains(_tokenAddress), "Unsupported token, failed to deposit.");
+
+        bool _ok = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
+        require(_ok, "Failed to transfer tokens.");
+
+        emit TokenDeposited(msg.sender, _odinAddress, _tokenAddress, _depositAmount);
+        return true;
+    }
+
+    /**
+    * @notice Adds ERC20 compatible token to supported tokens
+    * @param _tokenAddress Address of the ERC20 compatible token contract
+    * @return True if everything went well
+    */
+    function addToken(address _tokenAddress) onlyOwner() returns (bool) {
+        supportedTokens.mustAdd(_tokenAddress);
+        return true;
+    }
+
+    /**
+    * @notice Removes ERC20 compatible token from supported tokens
+    * @param _tokenAddress Address of the ERC20 compatible token contract
+    * @return True if everything went well
+    */
+    function removeToken(address _tokenAddress) onlyOwner() returns (bool) {
+        return supportedTokens.mustRemove(_tokenAddress);
         return true;
     }
 }
