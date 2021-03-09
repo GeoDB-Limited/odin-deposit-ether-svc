@@ -126,7 +126,7 @@ func (s *Service) processTransfer(ctx context.Context, event types.Log) error {
 	s.Lock()
 	defer s.Unlock()
 
-	contractAbi, err := abi.JSON(strings.NewReader(generated.OdinBridgeABI))
+	contractAbi, err := abi.JSON(strings.NewReader(generated.BridgeABI))
 	if err != nil {
 		log.Fatal(err)
 	}

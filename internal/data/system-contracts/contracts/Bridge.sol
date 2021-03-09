@@ -5,7 +5,8 @@ import "./AddressStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
-contract OdinBridge is Ownable {
+
+contract Bridge is Ownable {
     AddressStorage supportedTokens;
 
     event EtherDeposited(address indexed _userAddress, string _odinAddress, uint256 _depositAmount);
@@ -34,7 +35,7 @@ contract OdinBridge is Ownable {
     * @param _depositAmount Amount to deposit
     * @return True if everything went well
     */
-    function deposit(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount) returns (bool) {
+    function deposit(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount) external returns (bool) {
         require(supportedTokens.contains(_tokenAddress), "Unsupported token, failed to deposit.");
 
         bool _ok = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
@@ -49,7 +50,7 @@ contract OdinBridge is Ownable {
     * @param _tokenAddress Address of the ERC20 compatible token contract
     * @return True if everything went well
     */
-    function addToken(address _tokenAddress) onlyOwner() returns (bool) {
+    function addToken(address _tokenAddress) onlyOwner() external returns (bool) {
         supportedTokens.mustAdd(_tokenAddress);
         return true;
     }
@@ -59,8 +60,8 @@ contract OdinBridge is Ownable {
     * @param _tokenAddress Address of the ERC20 compatible token contract
     * @return True if everything went well
     */
-    function removeToken(address _tokenAddress) onlyOwner() returns (bool) {
-        return supportedTokens.mustRemove(_tokenAddress);
+    function removeToken(address _tokenAddress) onlyOwner() external returns (bool) {
+        supportedTokens.mustRemove(_tokenAddress);
         return true;
     }
 }

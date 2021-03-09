@@ -83,7 +83,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to retrieve account nonce")
 	}
 
-	contractAddress, _, _, err := generated.DeployOdinBridge(
+	contractAddress, _, _, err := generated.DeployBridge(
 		&bind.TransactOpts{
 			From:     crypto.PubkeyToAddress(*publicKeyECDSA),
 			Nonce:    big.NewInt(int64(nonce)),
@@ -94,6 +94,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 			Context:  context.TODO(),
 		},
 		s.eth,
+		[]common.Address{},
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")

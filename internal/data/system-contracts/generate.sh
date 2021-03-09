@@ -1,3 +1,7 @@
 #!/bin/bash
-solc --abi --bin -o ./build ./contracts/OdinBridge.sol --overwrite
-./bin/abigen --abi ./build/OdinBridge.abi --bin ./build/OdinBridge.bin --type OdinBridge --pkg generated --out ./generated/OdinBridge.go
+
+docker run -v $PWD:$PWD -w $PWD ethereum/solc:0.7.2 @openzeppelin/=$(pwd)/node_modules/@openzeppelin/ --overwrite --abi --bin -o ./build \
+contracts/Bridge.sol
+
+./bin/abigen --abi ./build/Bridge.abi --bin ./build/Bridge.bin --type Bridge --pkg generated --out ./generated/bridge.go
+
