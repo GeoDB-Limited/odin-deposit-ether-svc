@@ -9,8 +9,19 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract Bridge is Ownable {
     AddressStorage supportedTokens;
 
-    event EtherDeposited(address indexed _userAddress, string _odinAddress, uint256 _depositAmount);
-    event TokenDeposited(address indexed _userAddress, string _odinAddress, address _tokenAddress, uint256 _depositAmount);
+    event EtherDeposited(
+        address indexed _userAddress,
+        string _odinAddress,
+        uint256 _depositAmount
+    );
+    event TokenDeposited(
+        address indexed _userAddress,
+        string _odinAddress,
+        address indexed _tokenAddress,
+        uint256 _depositAmount
+    );
+    event TokenAdded(address indexed _tokenAddress);
+    event TokenRemoved(address indexed _tokenAddress);
 
     constructor(address[] memory _supportedTokens) {
         supportedTokens = new AddressStorage(_supportedTokens);
@@ -21,9 +32,8 @@ contract Bridge is Ownable {
     * @param _odinAddress Address in the Odin chain
     * @return True if everything went well
     */
-    function deposit(string memory _odinAddress) external payable returns (bool) {
+    function depositEther(string memory _odinAddress) external payable returns (bool) {
         require(msg.value > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
-
         emit EtherDeposited(msg.sender, _odinAddress, msg.value);
         return true;
     }
@@ -35,7 +45,9 @@ contract Bridge is Ownable {
     * @param _depositAmount Amount to deposit
     * @return True if everything went well
     */
-    function deposit(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount) external returns (bool) {
+    function depositToken(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
+    external returns (bool)
+    {
         require(supportedTokens.contains(_tokenAddress), "Unsupported token, failed to deposit.");
 
         bool _ok = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
@@ -52,6 +64,7 @@ contract Bridge is Ownable {
     */
     function addToken(address _tokenAddress) onlyOwner() external returns (bool) {
         supportedTokens.mustAdd(_tokenAddress);
+        emit TokenAdded(_tokenAddress);
         return true;
     }
 
@@ -62,6 +75,7 @@ contract Bridge is Ownable {
     */
     function removeToken(address _tokenAddress) onlyOwner() external returns (bool) {
         supportedTokens.mustRemove(_tokenAddress);
+        emit TokenRemoved(_tokenAddress);
         return true;
     }
 }
