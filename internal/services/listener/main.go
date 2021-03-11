@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -20,17 +21,16 @@ import (
 )
 
 type Service struct {
-	log             *logan.Entry
-	eth             *ethclient.Client
-	cfg             config.EthereumConfig
-	contractAddress common.Address
+	log  *logan.Entry
+	eth  *ethclient.Client
+	odin *client.Client
 
 	ch chan TransferDetails
 
 	sync.RWMutex
 }
 
-type EtherTransfer struct {
+type Transfer struct {
 	From     common.Address
 	To       string
 	Value    *big.Int
@@ -47,26 +47,12 @@ type TransferDetails struct {
 }
 
 func New(cfg config.Config) *Service {
-	/*
-		odin, err := odin.NewConnector(cfg.Odin()).Builder()
-		if err != nil {
-			cfg.Log().WithError(err).Fatal("failed to make builder")
-		}
-	*/
-
-	/*
-		contractAddress, err := odin.GetEtherBridgeAddress()
-		if err != nil {
-			cfg.Log().WithError(err).Fatal("failed to get cotract address")
-		}
-	*/
-
 	ch := make(chan TransferDetails)
 	return &Service{
-		log: cfg.Log(),
-		cfg: cfg.EthereumConfig(),
-		ch:  ch,
-		eth: cfg.EtherClient(),
+		log:  cfg.Log(),
+		eth:  cfg.EtherClient(),
+		odin: cfg.OdinClient(),
+		ch:   ch,
 
 		RWMutex: sync.RWMutex{},
 	}
@@ -85,8 +71,13 @@ func (s *Service) Run(ctx context.Context) {
 }
 
 func (s *Service) subscribe(ctx context.Context) error {
+	contractAddress, err := s.odin.GetBridgeAddress()
+	if err != nil {
+		return errors.Wrap(err, "failed to get contract address")
+	}
+
 	query := ethereum.FilterQuery{
-		Addresses: []common.Address{s.contractAddress},
+		Addresses: []common.Address{*contractAddress},
 	}
 
 	logs := make(chan types.Log)
@@ -131,7 +122,7 @@ func (s *Service) processTransfer(ctx context.Context, event types.Log) error {
 		log.Fatal(err)
 	}
 
-	parsed := new(EtherTransfer)
+	parsed := new(Transfer)
 	if err = contractAbi.UnpackIntoInterface(&parsed, "Transfer", event.Data); err != nil {
 		return errors.Wrap(err, "failed to unpack log", logan.F{
 			"event_data":   event.Data,

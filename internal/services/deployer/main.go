@@ -2,13 +2,11 @@ package deployer
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/odin/client"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"gitlab.com/distributed_lab/logan/v3"
@@ -17,23 +15,18 @@ import (
 )
 
 type Service struct {
-	log    *logan.Entry
 	config config.Config
+	log    *logan.Entry
 	eth    *ethclient.Client
-	odin   *client.OdinClient
+	odin   *client.Client
 }
 
 func New(cfg config.Config) *Service {
-	/*	odin, err := odin.NewConnector(cfg.Odin()).Builder()
-		if err != nil {
-			cfg.Log().WithError(err).Fatal("failed to make builder")
-		}*/
-
 	return &Service{
+		config: cfg,
 		log:    cfg.Log(),
 		eth:    cfg.EtherClient(),
-		config: cfg,
-		// odin: odin,
+		odin:   cfg.OdinClient(),
 	}
 }
 
@@ -46,53 +39,42 @@ func (s *Service) Run(ctx context.Context) (err error) {
 		}
 	}()
 
-	contractAddress, err := s.deployContract(ctx)
+	contractAddress, err := s.deployContract()
 	if err != nil {
 		return errors.Wrap(err, "failed to deploy contract")
 	}
 
-	fields := logan.F{}
-	fields["contract"] = contractAddress.Hex()
-	s.log.WithFields(fields).Info("contract deployed")
+	if err := s.odin.SetBridgeAddress(*contractAddress); err != nil {
+		return errors.Wrap(err, "failed to set contract address")
+	}
 
-	/*	if err := s.odin.SetEtherBridgeAddress(contractAddress); err != nil {
-			return errors.Wrap(err, "failed to set contract address")
-		}
-	*/
+	s.log.WithField("contract", contractAddress.Hex()).Info("Contract deployed")
+
 	return nil
 }
 
-func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
+func (s *Service) deployContract() (*common.Address, error) {
 	privateKey, err := crypto.HexToECDSA(s.config.DeployerConfig().KeyPair)
 	if err != nil {
 		return nil, errors.Wrap(err, "error casting private key to ECDSA")
 	}
 
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, errors.New("error casting public key to ECDSA")
-	}
-
-	signer := func(addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
-		return types.SignTx(tx, types.HomesteadSigner{}, privateKey)
-	}
-
-	nonce, err := s.eth.PendingNonceAt(ctx, crypto.PubkeyToAddress(*publicKeyECDSA))
+	chainId, err := s.eth.NetworkID(context.Background())
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to retrieve account nonce")
+		return nil, errors.New("failed to get chain id")
 	}
+
+	transactOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+	if err != nil {
+		return nil, errors.New("failed to create transaction options")
+	}
+
+	transactOpts.GasPrice = s.config.DeployerConfig().GasPrice
+	transactOpts.GasLimit = s.config.DeployerConfig().GasLimit.Uint64()
+	transactOpts.Value = big.NewInt(0)
 
 	contractAddress, _, _, err := generated.DeployBridge(
-		&bind.TransactOpts{
-			From:     crypto.PubkeyToAddress(*publicKeyECDSA),
-			Nonce:    big.NewInt(int64(nonce)),
-			Signer:   signer,
-			Value:    big.NewInt(0),
-			GasPrice: s.config.DeployerConfig().GasPrice,
-			GasLimit: s.config.DeployerConfig().GasLimit.Uint64(),
-			Context:  context.TODO(),
-		},
+		transactOpts,
 		s.eth,
 		[]common.Address{},
 	)

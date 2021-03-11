@@ -6,21 +6,21 @@ import (
 )
 
 type Config interface {
-	EthereumConfig() EthereumConfig
 	DeployerConfig() DeployerConfig
 
 	comfig.Logger
 	Ether
+	Odin
 }
 
 type config struct {
-	ethereumConfig EthereumConfig
 	deployerConfig comfig.Once
 
 	getter kv.Getter
 	once   comfig.Once
 	comfig.Logger
 	Ether
+	Odin
 }
 
 func NewConfig(getter kv.Getter) Config {
@@ -28,5 +28,6 @@ func NewConfig(getter kv.Getter) Config {
 		getter: getter,
 		Logger: comfig.NewLogger(getter, comfig.LoggerOpts{}),
 		Ether:  NewEther(getter),
+		Odin:   NewOdin(getter),
 	}
 }

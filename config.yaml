@@ -1,9 +1,12 @@
-rpc:
-  endpoint:
 log:
   level: info
   disable_sentry: true
+ethereum:
+  endpoint: "ETHEREUM NETWORK ENDPOINT"
+odin:
+  endpoint: "ODIN NETWORK ENDPOINT"
+  storage: "ADDRESS_STORAGE.txt"
 deployer:
-  private_key:
+  private_key: "ETHEREUM ACCOUNT PRIVATE KEY"
   gas_price: "20"
   gas_limit: "1200000"

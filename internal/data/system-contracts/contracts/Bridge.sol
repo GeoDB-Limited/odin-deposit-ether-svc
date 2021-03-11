@@ -10,7 +10,7 @@ contract Bridge is Ownable {
     AddressStorage supportedTokens;
 
     event EtherDeposited(
-        address indexed _userAddress,
+        address _userAddress,
         string _odinAddress,
         uint256 _depositAmount
     );

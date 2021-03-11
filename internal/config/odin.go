@@ -1,0 +1,51 @@
+package config
+
+import (
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
+	"github.com/cosmos/cosmos-sdk/types/tx"
+	"gitlab.com/distributed_lab/figure"
+	"gitlab.com/distributed_lab/kit/comfig"
+	"gitlab.com/distributed_lab/kit/kv"
+	"gitlab.com/distributed_lab/logan/v3/errors"
+	"google.golang.org/grpc"
+)
+
+type Odin interface {
+	OdinClient() *client.Client
+}
+
+type odin struct {
+	getter kv.Getter
+	once   comfig.Once
+	client *client.Client
+}
+
+func NewOdin(getter kv.Getter) Odin {
+	return &odin{getter: getter}
+}
+
+func (o *odin) OdinClient() *client.Client {
+	o.once.Do(func() interface{} {
+		var config struct {
+			Endpoint string `fig:"endpoint,required"`
+			Storage  string `fig:"storage,required"`
+		}
+
+		if err := figure.Out(&config).From(kv.MustGetStringMap(o.getter, "odin")).Please(); err != nil {
+			panic(errors.Wrap(err, "failed to figure out rpc"))
+		}
+
+		clientConn, err := grpc.Dial(config.Endpoint, grpc.WithInsecure())
+		if err != nil {
+			return errors.Wrap(err, "failed to dial")
+		}
+
+		serviceClient := tx.NewServiceClient(clientConn)
+		odinClient := client.New(&serviceClient, config.Storage)
+		o.client = odinClient
+
+		return nil
+	})
+
+	return o.client
+}
