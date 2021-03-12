@@ -93,10 +93,9 @@ func (s *Service) deployContract() (*common.Address, error) {
 	transactOpts.Nonce = big.NewInt(0).SetUint64(nonce)
 	transactOpts.Value = big.NewInt(0)
 
-	contractAddress, _, _, err := generated.DeployBridge(
+	contractAddress, _, _, err := generated.DeployEtherBridge(
 		transactOpts,
 		s.eth,
-		[]common.Address{},
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")
