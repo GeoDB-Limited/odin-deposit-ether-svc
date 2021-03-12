@@ -2,6 +2,7 @@ package deployer
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
@@ -11,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"gitlab.com/distributed_lab/logan/v3"
 	"gitlab.com/distributed_lab/logan/v3/errors"
+	"log"
 	"math/big"
 )
 
@@ -59,6 +61,18 @@ func (s *Service) deployContract() (*common.Address, error) {
 		return nil, errors.Wrap(err, "error casting private key to ECDSA")
 	}
 
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		return nil, errors.New("error casting public key to ECDSA")
+	}
+
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+	nonce, err := s.eth.PendingNonceAt(context.Background(), fromAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	chainId, err := s.eth.NetworkID(context.Background())
 	if err != nil {
 		return nil, errors.New("failed to get chain id")
@@ -69,8 +83,14 @@ func (s *Service) deployContract() (*common.Address, error) {
 		return nil, errors.New("failed to create transaction options")
 	}
 
-	transactOpts.GasPrice = s.config.DeployerConfig().GasPrice
+	gasPrice, err := s.eth.SuggestGasPrice(context.Background())
+	if err != nil {
+		return nil, errors.New("failed to suggest gas price")
+	}
+
+	transactOpts.GasPrice = gasPrice
 	transactOpts.GasLimit = s.config.DeployerConfig().GasLimit.Uint64()
+	transactOpts.Nonce = big.NewInt(0).SetUint64(nonce)
 	transactOpts.Value = big.NewInt(0)
 
 	contractAddress, _, _, err := generated.DeployBridge(

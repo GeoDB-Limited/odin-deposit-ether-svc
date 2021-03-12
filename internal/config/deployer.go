@@ -9,7 +9,6 @@ import (
 
 type DeployerConfig struct {
 	KeyPair  string   `fig:"private_key,required"`
-	GasPrice *big.Int `fig:"gas_price,required"`
 	GasLimit *big.Int `fig:"gas_limit,required"`
 }
 
