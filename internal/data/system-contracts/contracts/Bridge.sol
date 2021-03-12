@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity ^0.7.0;
+pragma solidity >=0.6.0 <0.8.0;
 
 import "./AddressStorage.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -10,7 +10,7 @@ contract Bridge is Ownable {
     AddressStorage supportedTokens;
 
     event EtherDeposited(
-        address _userAddress,
+        address indexed _userAddress,
         string _odinAddress,
         uint256 _depositAmount
     );
