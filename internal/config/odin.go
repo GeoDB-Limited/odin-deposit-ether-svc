@@ -10,20 +10,24 @@ import (
 	"google.golang.org/grpc"
 )
 
+// Odin defines an interface for wrapped odin client.
 type Odin interface {
 	OdinClient() *client.Client
 }
 
+// odin defines typed wrapper for the odin client.
 type odin struct {
 	getter kv.Getter
 	once   comfig.Once
 	client *client.Client
 }
 
+// NewOdin creates a new odin client.
 func NewOdin(getter kv.Getter) Odin {
 	return &odin{getter: getter}
 }
 
+// OdinClient returns odin client.
 func (o *odin) OdinClient() *client.Client {
 	o.once.Do(func() interface{} {
 		var config struct {

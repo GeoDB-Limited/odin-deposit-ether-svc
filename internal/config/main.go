@@ -5,6 +5,7 @@ import (
 	"gitlab.com/distributed_lab/kit/kv"
 )
 
+// Config defines an interface of global service configurations.
 type Config interface {
 	DeployerConfig() DeployerConfig
 
@@ -13,6 +14,7 @@ type Config interface {
 	Odin
 }
 
+// Config defines global service configurations.
 type config struct {
 	deployerConfig comfig.Once
 
@@ -23,6 +25,7 @@ type config struct {
 	Odin
 }
 
+// NewConfig returns global service configurations.
 func NewConfig(getter kv.Getter) Config {
 	return &config{
 		getter: getter,

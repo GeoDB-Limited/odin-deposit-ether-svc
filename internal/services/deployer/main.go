@@ -12,10 +12,10 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"gitlab.com/distributed_lab/logan/v3"
 	"gitlab.com/distributed_lab/logan/v3/errors"
-	"log"
 	"math/big"
 )
 
+// Service defines a service that deploys a bridge contract.
 type Service struct {
 	config config.Config
 	log    *logan.Entry
@@ -23,6 +23,7 @@ type Service struct {
 	odin   *client.Client
 }
 
+// New creates a service that deploys a bridge contract.
 func New(cfg config.Config) *Service {
 	return &Service{
 		config: cfg,
@@ -32,6 +33,7 @@ func New(cfg config.Config) *Service {
 	}
 }
 
+// Run performs deploying a bridge smart contract.
 func (s *Service) Run(ctx context.Context) (err error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer func() {
@@ -55,6 +57,7 @@ func (s *Service) Run(ctx context.Context) (err error) {
 	return nil
 }
 
+// deployContract deploys a bridge contract.
 func (s *Service) deployContract() (*common.Address, error) {
 	privateKey, err := crypto.HexToECDSA(s.config.DeployerConfig().KeyPair)
 	if err != nil {
@@ -70,7 +73,7 @@ func (s *Service) deployContract() (*common.Address, error) {
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 	nonce, err := s.eth.PendingNonceAt(context.Background(), fromAddress)
 	if err != nil {
-		log.Fatal(err)
+		return nil, errors.New("failed to get a nonce")
 	}
 
 	chainId, err := s.eth.NetworkID(context.Background())

@@ -9,6 +9,7 @@ import (
 	"gitlab.com/distributed_lab/logan/v3/errors"
 )
 
+// Service defines a service that allows exchanging ETH and ERC20 for odin.
 type Service struct {
 	config   config.Config
 	log      *logan.Entry
@@ -16,6 +17,7 @@ type Service struct {
 	odin     *client.Client
 }
 
+// New creates a service that allows exchanging ETH and ERC20 for odin.
 func New(cfg config.Config) *Service {
 	return &Service{
 		config:   cfg,
@@ -25,6 +27,7 @@ func New(cfg config.Config) *Service {
 	}
 }
 
+// Run performs events listening and querying the Odin  minting module.
 func (s *Service) Run(ctx context.Context) (err error) {
 	localCtx, cancel := context.WithCancel(ctx)
 

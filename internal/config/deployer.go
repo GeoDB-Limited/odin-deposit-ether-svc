@@ -7,11 +7,13 @@ import (
 	"math/big"
 )
 
+// DeployerConfig defines the configurations of Deployer service.
 type DeployerConfig struct {
 	KeyPair  string   `fig:"private_key,required"`
 	GasLimit *big.Int `fig:"gas_limit,required"`
 }
 
+// DeployerConfig returns the configurations of Deployer service.
 func (c *config) DeployerConfig() DeployerConfig {
 	return c.deployerConfig.Do(func() interface{} {
 		var result DeployerConfig

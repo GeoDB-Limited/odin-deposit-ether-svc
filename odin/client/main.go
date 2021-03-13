@@ -7,14 +7,13 @@ import (
 	"io/ioutil"
 )
 
-type Interface interface {
-}
-
+// Client defines typed wrapper for the cosmos sdk service client.
 type Client struct {
 	client  *tx.ServiceClient
 	storage string
 }
 
+// New creates a client that uses the given cosmos sdk service client.
 func New(client *tx.ServiceClient, storage string) *Client {
 	return &Client{
 		client:  client,
@@ -22,6 +21,7 @@ func New(client *tx.ServiceClient, storage string) *Client {
 	}
 }
 
+// SetBridgeAddress sets an address of the bridge contract to the storage.
 func (c *Client) SetBridgeAddress(address common.Address) error {
 	if err := ioutil.WriteFile(c.storage, address.Bytes(), 0777); err != nil {
 		return errors.Wrap(err, "failed to add the address to the storage")
@@ -29,6 +29,7 @@ func (c *Client) SetBridgeAddress(address common.Address) error {
 	return nil
 }
 
+// GetBridgeAddress returns an address of the bridge contract.
 func (c *Client) GetBridgeAddress() (*common.Address, error) {
 	data, err := ioutil.ReadFile(c.storage)
 	if err != nil {

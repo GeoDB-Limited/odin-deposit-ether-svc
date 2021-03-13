@@ -17,6 +17,7 @@ import (
 	"time"
 )
 
+// Service defines a service that listens to events of a bridge contract.
 type Service struct {
 	log  *logan.Entry
 	eth  *ethclient.Client
@@ -26,6 +27,7 @@ type Service struct {
 	sync.RWMutex
 }
 
+// TransferDetails defines unpacked data of the event.
 type TransferDetails struct {
 	UserAddress     common.Address
 	OdinAddress     string
@@ -34,6 +36,7 @@ type TransferDetails struct {
 	BlockTime       time.Time
 }
 
+// New creates a service that listens to events of a bridge contract.
 func New(cfg config.Config) *Service {
 	ch := make(chan TransferDetails)
 	return &Service{
@@ -45,6 +48,7 @@ func New(cfg config.Config) *Service {
 	}
 }
 
+// Run listens to events of a bridge contract.
 func (s *Service) Run(ctx context.Context) error {
 	err := s.subscribe(ctx)
 	if err != nil {
@@ -55,6 +59,7 @@ func (s *Service) Run(ctx context.Context) error {
 	return nil
 }
 
+// subscribe subscribes on events of a bridge contract.
 func (s *Service) subscribe(ctx context.Context) error {
 	contractAddress, err := s.odin.GetBridgeAddress()
 	if err != nil {
@@ -100,6 +105,7 @@ runner:
 	return nil
 }
 
+// processTransfer parses events from smart contract.
 func (s *Service) processTransfer(contract generated.EtherBridge, event types.Log, ctx context.Context) error {
 	if event.Removed {
 		return nil
@@ -137,10 +143,10 @@ func (s *Service) processTransfer(contract generated.EtherBridge, event types.Lo
 	))
 
 	// s.ch <- transferDetails
-
 	return nil
 }
 
+// GetTransferDetails returns the flow of unpacked events.
 func (s *Service) GetTransferDetails() <-chan TransferDetails {
 	return s.ch
 }
