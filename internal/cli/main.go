@@ -37,10 +37,18 @@ func Run(args []string) bool {
 	switch cmd {
 	case deposit.FullCommand():
 		svc := depositer.New(cfg)
-		svc.Run(context.Background())
+		err := svc.Run(context.Background())
+		if err != nil {
+			log.WithError(err).Error("failed to run depositer")
+			return false
+		}
 	case deploy.FullCommand():
 		svc := deployer.New(cfg)
-		svc.Run(context.Background())
+		err := svc.Run(context.Background())
+		if err != nil {
+			log.WithError(err).Error("failed to run deployer")
+			return false
+		}
 	default:
 		log.WithField("command", cmd).Error("Unknown command")
 		return false
