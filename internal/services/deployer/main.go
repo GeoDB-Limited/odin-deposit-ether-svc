@@ -10,24 +10,24 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"gitlab.com/distributed_lab/logan/v3"
-	"gitlab.com/distributed_lab/logan/v3/errors"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"math/big"
 )
 
 // Service defines a service that deploys a bridge contract.
 type Service struct {
 	config config.Config
-	log    *logan.Entry
+	log    *logrus.Logger
 	eth    *ethclient.Client
-	odin   *client.Client
+	odin   client.Client
 }
 
 // New creates a service that deploys a bridge contract.
 func New(cfg config.Config) *Service {
 	return &Service{
 		config: cfg,
-		log:    cfg.Log(),
+		log:    cfg.Logger(),
 		eth:    cfg.EtherClient(),
 		odin:   cfg.OdinClient(),
 	}
@@ -35,15 +35,7 @@ func New(cfg config.Config) *Service {
 
 // Run performs deploying a bridge smart contract.
 func (s *Service) Run(ctx context.Context) (err error) {
-	ctx, cancel := context.WithCancel(ctx)
-	defer func() {
-		if rvr := recover(); rvr != nil {
-			cancel()
-			err = errors.Wrap(errors.FromPanic(rvr), "service panicked")
-		}
-	}()
-
-	contractAddress, err := s.deployContract()
+	contractAddress, err := s.deployContract(ctx)
 	if err != nil {
 		return errors.Wrap(err, "failed to deploy contract")
 	}
@@ -58,8 +50,8 @@ func (s *Service) Run(ctx context.Context) (err error) {
 }
 
 // deployContract deploys a bridge contract.
-func (s *Service) deployContract() (*common.Address, error) {
-	privateKey, err := crypto.HexToECDSA(s.config.DeployerConfig().KeyPair)
+func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
+	privateKey, err := crypto.HexToECDSA(s.config.DeployerConfig().PrivateKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "error casting private key to ECDSA")
 	}
@@ -67,28 +59,28 @@ func (s *Service) deployContract() (*common.Address, error) {
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return nil, errors.New("error casting public key to ECDSA")
+		return nil, errors.Wrap(err, "error casting public key to ECDSA")
 	}
 
 	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	nonce, err := s.eth.PendingNonceAt(context.Background(), fromAddress)
+	nonce, err := s.eth.PendingNonceAt(ctx, fromAddress)
 	if err != nil {
-		return nil, errors.New("failed to get a nonce")
+		return nil, errors.Wrap(err, "failed to get a nonce")
 	}
 
-	chainId, err := s.eth.NetworkID(context.Background())
+	chainId, err := s.eth.NetworkID(ctx)
 	if err != nil {
-		return nil, errors.New("failed to get chain id")
+		return nil, errors.Wrap(err, "failed to get chain id")
 	}
 
 	transactOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
 	if err != nil {
-		return nil, errors.New("failed to create transaction options")
+		return nil, errors.Wrap(err, "failed to create transaction options")
 	}
 
-	gasPrice, err := s.eth.SuggestGasPrice(context.Background())
+	gasPrice, err := s.eth.SuggestGasPrice(ctx)
 	if err != nil {
-		return nil, errors.New("failed to suggest gas price")
+		return nil, errors.Wrap(err, "failed to suggest gas price")
 	}
 
 	transactOpts.GasPrice = gasPrice

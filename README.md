@@ -9,10 +9,10 @@ Environmental variable `KV_VIPER_FILE` must be set and contain path to desired c
 ### To deploy a new Solidity cotract:
 
 ```bash
-odin-deposit-ether-svc run deploy
+odin-deposit-ether-svc run deployer
 ```
 
 ### To run deposit service:
 ```bash
-odin-deposit-ether-svc run deposit
+odin-deposit-ether-svc run depositer
 ```

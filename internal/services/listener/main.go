@@ -2,7 +2,6 @@ package listener
 
 import (
 	"context"
-	"fmt"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
@@ -10,28 +9,25 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"gitlab.com/distributed_lab/logan/v3"
-	"gitlab.com/distributed_lab/logan/v3/errors"
+	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"math/big"
-	"sync"
 	"time"
 )
 
 // Service defines a service that listens to events of a bridge contract.
 type Service struct {
-	log  *logan.Entry
+	log  *logrus.Logger
 	eth  *ethclient.Client
-	odin *client.Client
+	odin client.Client
 	ch   chan TransferDetails
-
-	sync.RWMutex
 }
 
 // TransferDetails defines unpacked data of the event.
 type TransferDetails struct {
+	DepositAmount   *big.Int
 	UserAddress     common.Address
 	OdinAddress     string
-	DepositAmount   *big.Int
 	TransactionHash string
 	BlockTime       time.Time
 }
@@ -40,11 +36,10 @@ type TransferDetails struct {
 func New(cfg config.Config) *Service {
 	ch := make(chan TransferDetails)
 	return &Service{
-		log:     cfg.Log(),
-		eth:     cfg.EtherClient(),
-		odin:    cfg.OdinClient(),
-		ch:      ch,
-		RWMutex: sync.RWMutex{},
+		log:  cfg.Logger(),
+		eth:  cfg.EtherClient(),
+		odin: cfg.OdinClient(),
+		ch:   ch,
 	}
 }
 
@@ -54,7 +49,6 @@ func (s *Service) Run(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to subscribe on the contract events")
 	}
-	s.log.Info("Finished listening new transfers")
 
 	return nil
 }
@@ -76,42 +70,32 @@ func (s *Service) subscribe(ctx context.Context) error {
 	}
 
 	logs := make(chan types.Log)
-	subscription, err := s.eth.SubscribeFilterLogs(context.Background(), query, logs)
+	subscription, err := s.eth.SubscribeFilterLogs(ctx, query, logs)
 	if err != nil {
 		return errors.Wrap(err, "failed to subscribe to new logs")
 	}
 
 	defer subscription.Unsubscribe()
 
-runner:
 	for {
-		select {
-		case err := <-subscription.Err():
-			return errors.Wrap(err, "subscription returned error")
-		case event, ok := <-logs:
-			if !ok {
-				return errors.New("channel closed unexpectedly")
-			}
+		event, ok := <-logs
+		if !ok {
+			return errors.Wrap(err, "channel closed unexpectedly")
+		}
 
-			err = s.processTransfer(*contract, event, ctx)
-			if err != nil {
-				return errors.Wrap(err, "failed to process transfer")
-			}
-		case <-ctx.Done():
-			break runner
+		err = s.processTransfer(*contract, event, ctx)
+		if err != nil {
+			return errors.Wrap(err, "failed to process transfer")
 		}
 	}
-
-	return nil
 }
 
 // processTransfer parses events from smart contract.
 func (s *Service) processTransfer(contract generated.EtherBridge, event types.Log, ctx context.Context) error {
 	if event.Removed {
+		s.log.WithField("block", event.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 		return nil
 	}
-	s.Lock()
-	defer s.Unlock()
 
 	parsed, err := contract.ParseEtherDeposited(event)
 	if err != nil {
@@ -120,10 +104,7 @@ func (s *Service) processTransfer(contract generated.EtherBridge, event types.Lo
 
 	block, err := s.eth.BlockByHash(ctx, event.BlockHash)
 	if err != nil {
-		return errors.Wrap(err, "failed to get block", logan.F{
-			"block_hash":   event.BlockHash.String(),
-			"block_number": event.BlockNumber,
-		})
+		return errors.Wrap(err, "failed to get block")
 	}
 
 	transferDetails := TransferDetails{
@@ -134,19 +115,14 @@ func (s *Service) processTransfer(contract generated.EtherBridge, event types.Lo
 		BlockTime:       time.Unix(int64(block.Time()), 0),
 	}
 
-	s.log.Info(fmt.Sprintf(
-		"%s deposited %s ETH to %s at %s",
-		transferDetails.UserAddress,
-		transferDetails.DepositAmount,
-		transferDetails.OdinAddress,
-		transferDetails.BlockTime.UTC().String(),
-	))
+	s.log.WithFields(logrus.Fields{
+		"ethereum_address": transferDetails.UserAddress,
+		"odin_address":     transferDetails.OdinAddress,
+		"amount":           transferDetails.DepositAmount,
+		"block_time":       transferDetails.BlockTime.UTC().String(),
+	}).Info("User deposited")
 
 	// s.ch <- transferDetails
-	return nil
-}
 
-// GetTransferDetails returns the flow of unpacked events.
-func (s *Service) GetTransferDetails() <-chan TransferDetails {
-	return s.ch
+	return nil
 }

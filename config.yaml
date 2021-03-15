@@ -1,6 +1,4 @@
-log:
-  level: info
-  disable_sentry: true
+log: info
 ethereum:
   endpoint: "ETHEREUM NETWORK ENDPOINT"
 odin:
@@ -8,5 +6,4 @@ odin:
   storage: "ADDRESS_STORAGE.txt"
 deployer:
   private_key: "ETHEREUM ACCOUNT PRIVATE KEY"
-  gas_price: "20"
   gas_limit: "1200000"
