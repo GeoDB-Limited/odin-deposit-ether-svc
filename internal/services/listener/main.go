@@ -13,16 +13,15 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"strings"
-	"sync"
 	"time"
 )
 
 // Service defines a service that listens to events of a bridge contract.
 type Service struct {
-	log      *logrus.Logger
-	eth      *ethclient.Client
-	contract *bind.BoundContract
-	ch       chan<- eth.TransferDetails
+	log             *logrus.Logger
+	eth             *ethclient.Client
+	contract        *bind.BoundContract
+	transferDetails chan<- eth.TransferDetails
 }
 
 // New creates a service that listens to events of a bridge contract.
@@ -42,21 +41,19 @@ func New(cfg config.Config, contractAddr common.Address, ch chan<- eth.TransferD
 	)
 
 	return &Service{
-		log:      cfg.Logger(),
-		eth:      etherClient,
-		contract: contract,
-		ch:       ch,
+		log:             cfg.Logger(),
+		eth:             etherClient,
+		contract:        contract,
+		transferDetails: ch,
 	}
 }
 
 // Run listens to events of a bridge contract.
-func (s *Service) Run(ctx context.Context, wg *sync.WaitGroup) {
+func (s *Service) Run(ctx context.Context) {
 	err := s.subscribe(ctx)
 	if err != nil {
 		panic(errors.Wrap(err, "failed to subscribe on the contract events"))
 	}
-
-	wg.Done()
 }
 
 // subscribe subscribes on events of a bridge contract.
@@ -110,7 +107,7 @@ func (s *Service) processTransfer(ctx context.Context, event types.Log) error {
 		"block_time":       transferDetails.BlockTime.UTC().String(),
 	}).Info("User deposited")
 
-	s.ch <- transferDetails
+	s.transferDetails <- transferDetails
 
 	return nil
 }

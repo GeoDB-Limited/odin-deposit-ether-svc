@@ -84,9 +84,8 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 	}
 
 	transactOpts.GasPrice = gasPrice
-	transactOpts.GasLimit = s.config.DeployerConfig().GasLimit.Uint64()
-	transactOpts.Nonce = big.NewInt(0).SetUint64(nonce)
-	transactOpts.Value = big.NewInt(0)
+	transactOpts.GasLimit = s.config.DeployerConfig().GasLimit
+	transactOpts.Nonce = big.NewInt(int64(nonce))
 
 	contractAddress, _, _, err := generated.DeployEtherBridge(
 		transactOpts,

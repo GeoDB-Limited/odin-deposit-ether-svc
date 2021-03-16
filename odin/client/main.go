@@ -7,14 +7,13 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
-	"sync"
 )
 
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
 	SetBridgeAddress(common.Address) error
-	GetBridgeAddress() (*common.Address, error)
-	ClaimMinting(<-chan types.TransferDetails, *sync.WaitGroup)
+	GetBridgeAddress() (common.Address, error)
+	ClaimMinting(<-chan types.TransferDetails)
 }
 
 // client defines typed wrapper for the cosmos sdk service client.
@@ -42,24 +41,22 @@ func (c *client) SetBridgeAddress(address common.Address) error {
 }
 
 // GetBridgeAddress returns an address of the bridge contract.
-func (c *client) GetBridgeAddress() (*common.Address, error) {
+func (c *client) GetBridgeAddress() (common.Address, error) {
 	data, err := ioutil.ReadFile(c.storage)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get the address")
+		return common.Address{}, errors.Wrap(err, "failed to get the address")
 	}
 
 	address := common.BytesToAddress(data)
-	return &address, nil
+	return address, nil
 }
 
 // ClaimMinting claims minting from Odin
-func (c *client) ClaimMinting(transferDetails <-chan types.TransferDetails, wg *sync.WaitGroup) {
+func (c *client) ClaimMinting(transferDetails <-chan types.TransferDetails) {
 	for data := range transferDetails {
 		c.log.WithFields(logrus.Fields{
 			"odin_address": data.OdinAddress,
 			"amount":       data.DepositAmount,
 		}).Info("Requersted to mint")
 	}
-
-	wg.Done()
 }

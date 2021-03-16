@@ -8,7 +8,6 @@ import (
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"sync"
 )
 
 // Service defines a service that allows exchanging ETH and ERC20 for odin.
@@ -34,16 +33,11 @@ func (s *Service) Run(ctx context.Context) error {
 		return errors.Wrap(err, "failed to get contract address")
 	}
 
-	wait := &sync.WaitGroup{}
-	wait.Add(2)
-
 	transferDetails := make(chan types.TransferDetails)
-	go s.odin.ClaimMinting(transferDetails, wait)
+	go s.odin.ClaimMinting(transferDetails)
 
-	listenerService := listener.New(s.config, *contractAddress, transferDetails)
-	go listenerService.Run(ctx, wait)
-
-	wait.Wait()
+	listenerService := listener.New(s.config, contractAddress, transferDetails)
+	go listenerService.Run(ctx)
 
 	return nil
 }

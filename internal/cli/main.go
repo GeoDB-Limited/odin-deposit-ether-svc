@@ -19,7 +19,7 @@ func Run(args []string) bool {
 		}
 	}()
 
-	app := kingpin.New("odin-depositerService-ether-svc", "")
+	app := kingpin.New("odin-deposit-ether-svc", "")
 
 	runCmd := app.Command("run", "run command")
 	depositerService := runCmd.Command("depositer", "run a service to deposit into Odin")
