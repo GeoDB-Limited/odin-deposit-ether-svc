@@ -4,7 +4,7 @@ to deposit ether and tokens into Odin from Ethereum blockchain. It listens for s
 
 ## Usage
 
-Environmental variable `KV_VIPER_FILE` must be set and contain path to desired config file.
+Environmental variable `CONFIG` must be set and contain path to desired config file.
 
 ### To deploy a new Solidity cotract:
 
