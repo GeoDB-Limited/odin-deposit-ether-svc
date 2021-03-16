@@ -4,7 +4,6 @@ import (
 	"context"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -17,10 +16,9 @@ import (
 
 // Service defines a service that listens to events of a bridge contract.
 type Service struct {
-	log  *logrus.Logger
-	eth  *ethclient.Client
-	odin client.Client
-	ch   chan TransferDetails
+	log *logrus.Logger
+	eth *ethclient.Client
+	ch  chan TransferDetails
 }
 
 // TransferDetails defines unpacked data of the event.
@@ -36,16 +34,15 @@ type TransferDetails struct {
 func New(cfg config.Config) *Service {
 	ch := make(chan TransferDetails)
 	return &Service{
-		log:  cfg.Logger(),
-		eth:  cfg.EtherClient(),
-		odin: cfg.OdinClient(),
-		ch:   ch,
+		log: cfg.Logger(),
+		eth: cfg.EtherClient(),
+		ch:  ch,
 	}
 }
 
 // Run listens to events of a bridge contract.
-func (s *Service) Run(ctx context.Context) error {
-	err := s.subscribe(ctx)
+func (s *Service) Run(ctx context.Context, contractAddress common.Address) error {
+	err := s.subscribe(ctx, contractAddress)
 	if err != nil {
 		return errors.Wrap(err, "failed to subscribe on the contract events")
 	}
@@ -54,19 +51,14 @@ func (s *Service) Run(ctx context.Context) error {
 }
 
 // subscribe subscribes on events of a bridge contract.
-func (s *Service) subscribe(ctx context.Context) error {
-	contractAddress, err := s.odin.GetBridgeAddress()
-	if err != nil {
-		return errors.Wrap(err, "failed to get contract address")
-	}
-
-	contract, err := generated.NewEtherBridge(*contractAddress, s.eth)
+func (s *Service) subscribe(ctx context.Context, contractAddress common.Address) error {
+	contract, err := generated.NewEtherBridge(contractAddress, s.eth)
 	if err != nil {
 		return errors.Wrap(err, "failed to create a contract instance")
 	}
 
 	query := ethereum.FilterQuery{
-		Addresses: []common.Address{*contractAddress},
+		Addresses: []common.Address{contractAddress},
 	}
 
 	logs := make(chan types.Log)
@@ -74,26 +66,25 @@ func (s *Service) subscribe(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to subscribe to new logs")
 	}
-
 	defer subscription.Unsubscribe()
 
-	for {
-		event, ok := <-logs
-		if !ok {
-			return errors.Wrap(err, "channel closed unexpectedly")
+	go func() error {
+		for event := range logs {
+			err = s.processTransfer(contract, event, ctx)
+			if err != nil {
+				return errors.Wrap(err, "failed to process transfer")
+			}
 		}
+		return nil
+	}()
 
-		err = s.processTransfer(*contract, event, ctx)
-		if err != nil {
-			return errors.Wrap(err, "failed to process transfer")
-		}
-	}
+	return nil
 }
 
 // processTransfer parses events from smart contract.
-func (s *Service) processTransfer(contract generated.EtherBridge, event types.Log, ctx context.Context) error {
+func (s *Service) processTransfer(contract *generated.EtherBridge, event types.Log, ctx context.Context) error {
 	if event.Removed {
-		s.log.WithField("block", event.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+		s.log.WithField("event", event.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 		return nil
 	}
 
@@ -122,7 +113,7 @@ func (s *Service) processTransfer(contract generated.EtherBridge, event types.Lo
 		"block_time":       transferDetails.BlockTime.UTC().String(),
 	}).Info("User deposited")
 
-	// s.ch <- transferDetails
+	s.ch <- transferDetails
 
 	return nil
 }
