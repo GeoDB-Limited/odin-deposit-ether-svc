@@ -1,6 +1,8 @@
 package client
 
 import (
+	"fmt"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/depositer"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -11,6 +13,7 @@ import (
 type Client interface {
 	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (*common.Address, error)
+	ClaimMinting(<-chan depositer.TransferDetails)
 }
 
 // client defines typed wrapper for the cosmos sdk service client.
@@ -44,4 +47,11 @@ func (c *client) GetBridgeAddress() (*common.Address, error) {
 
 	address := common.BytesToAddress(data)
 	return &address, nil
+}
+
+// ClaimMinting claims minting from Odin
+func (c *client) ClaimMinting(transferDetails <-chan depositer.TransferDetails) {
+	for data := range transferDetails {
+		fmt.Println(data)
+	}
 }

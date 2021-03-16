@@ -4,92 +4,94 @@ import (
 	"context"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
-	"github.com/ethereum/go-ethereum"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/depositer"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"math/big"
+	"strings"
 	"time"
 )
 
 // Service defines a service that listens to events of a bridge contract.
 type Service struct {
-	log *logrus.Logger
-	eth *ethclient.Client
-	ch  chan TransferDetails
+	log      *logrus.Logger
+	eth      *ethclient.Client
+	contract *bind.BoundContract
+	ch       chan<- depositer.TransferDetails
 }
 
-// TransferDetails defines unpacked data of the event.
-type TransferDetails struct {
-	DepositAmount   *big.Int
-	UserAddress     common.Address
-	OdinAddress     string
-	TransactionHash string
-	BlockTime       time.Time
+// Transfer defines a parsed event log
+type Transfer struct {
+	UserAddress   common.Address
+	OdinAddress   string
+	DepositAmount *big.Int
 }
 
 // New creates a service that listens to events of a bridge contract.
-func New(cfg config.Config) *Service {
-	ch := make(chan TransferDetails)
+func New(cfg config.Config, ch chan<- depositer.TransferDetails, contractAddr common.Address) *Service {
+	parsed, err := abi.JSON(strings.NewReader(generated.EtherBridgeABI))
+	if err != nil {
+		panic(errors.Wrap(err, "failed to parse contract ABI"))
+	}
+
+	etherClient := cfg.EtherClient()
+	contract := bind.NewBoundContract(
+		contractAddr,
+		parsed,
+		etherClient,
+		etherClient,
+		etherClient,
+	)
+
 	return &Service{
-		log: cfg.Logger(),
-		eth: cfg.EtherClient(),
-		ch:  ch,
+		log:      cfg.Logger(),
+		eth:      etherClient,
+		contract: contract,
+		ch:       ch,
 	}
 }
 
 // Run listens to events of a bridge contract.
-func (s *Service) Run(ctx context.Context, contractAddress common.Address) error {
-	err := s.subscribe(ctx, contractAddress)
+func (s *Service) Run(ctx context.Context) {
+	err := s.subscribe(ctx)
 	if err != nil {
-		return errors.Wrap(err, "failed to subscribe on the contract events")
+		panic(errors.Wrap(err, "failed to subscribe on the contract events"))
 	}
-
-	return nil
 }
 
 // subscribe subscribes on events of a bridge contract.
-func (s *Service) subscribe(ctx context.Context, contractAddress common.Address) error {
-	contract, err := generated.NewEtherBridge(contractAddress, s.eth)
-	if err != nil {
-		return errors.Wrap(err, "failed to create a contract instance")
-	}
-
-	query := ethereum.FilterQuery{
-		Addresses: []common.Address{contractAddress},
-	}
-
-	logs := make(chan types.Log)
-	subscription, err := s.eth.SubscribeFilterLogs(ctx, query, logs)
+func (s *Service) subscribe(ctx context.Context) error {
+	watchOpts := &bind.WatchOpts{Context: ctx}
+	logs, subscription, err := s.contract.WatchLogs(watchOpts, "EtherDeposited")
 	if err != nil {
 		return errors.Wrap(err, "failed to subscribe to new logs")
 	}
 	defer subscription.Unsubscribe()
 
-	go func() error {
-		for event := range logs {
-			err = s.processTransfer(contract, event, ctx)
-			if err != nil {
-				return errors.Wrap(err, "failed to process transfer")
-			}
+	for event := range logs {
+		err = s.processTransfer(ctx, event)
+		if err != nil {
+			return errors.Wrap(err, "failed to process transfer")
 		}
-		return nil
-	}()
+	}
 
 	return nil
 }
 
 // processTransfer parses events from smart contract.
-func (s *Service) processTransfer(contract *generated.EtherBridge, event types.Log, ctx context.Context) error {
+func (s *Service) processTransfer(ctx context.Context, event types.Log) error {
 	if event.Removed {
 		s.log.WithField("event", event.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 		return nil
 	}
 
-	parsed, err := contract.ParseEtherDeposited(event)
-	if err != nil {
+	parsed := new(Transfer)
+	if err := s.contract.UnpackLog(parsed, "EtherDeposited", event); err != nil {
 		return errors.Wrap(err, "failed to parse log")
 	}
 
@@ -98,7 +100,7 @@ func (s *Service) processTransfer(contract *generated.EtherBridge, event types.L
 		return errors.Wrap(err, "failed to get block")
 	}
 
-	transferDetails := TransferDetails{
+	transferDetails := depositer.TransferDetails{
 		UserAddress:     parsed.UserAddress,
 		OdinAddress:     parsed.OdinAddress,
 		DepositAmount:   parsed.DepositAmount,
