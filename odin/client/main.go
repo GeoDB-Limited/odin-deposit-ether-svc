@@ -1,32 +1,35 @@
 package client
 
 import (
-	"fmt"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/depositer"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
+	"github.com/sirupsen/logrus"
 	"io/ioutil"
+	"sync"
 )
 
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
 	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (*common.Address, error)
-	ClaimMinting(<-chan depositer.TransferDetails)
+	ClaimMinting(<-chan types.TransferDetails, *sync.WaitGroup)
 }
 
 // client defines typed wrapper for the cosmos sdk service client.
 type client struct {
 	client  *tx.ServiceClient
 	storage string
+	log     *logrus.Logger
 }
 
 // New creates a client that uses the given cosmos sdk service client.
-func New(serviceClient *tx.ServiceClient, storage string) Client {
+func New(serviceClient *tx.ServiceClient, storage string, log *logrus.Logger) Client {
 	return &client{
 		client:  serviceClient,
 		storage: storage,
+		log:     log,
 	}
 }
 
@@ -50,8 +53,13 @@ func (c *client) GetBridgeAddress() (*common.Address, error) {
 }
 
 // ClaimMinting claims minting from Odin
-func (c *client) ClaimMinting(transferDetails <-chan depositer.TransferDetails) {
+func (c *client) ClaimMinting(transferDetails <-chan types.TransferDetails, wg *sync.WaitGroup) {
 	for data := range transferDetails {
-		fmt.Println(data)
+		c.log.WithFields(logrus.Fields{
+			"odin_address": data.OdinAddress,
+			"amount":       data.DepositAmount,
+		}).Info("Requersted to mint")
 	}
+
+	wg.Done()
 }

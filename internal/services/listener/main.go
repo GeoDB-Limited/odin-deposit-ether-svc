@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/depositer"
+	eth "github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -12,8 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"math/big"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -22,18 +22,11 @@ type Service struct {
 	log      *logrus.Logger
 	eth      *ethclient.Client
 	contract *bind.BoundContract
-	ch       chan<- depositer.TransferDetails
-}
-
-// Transfer defines a parsed event log
-type Transfer struct {
-	UserAddress   common.Address
-	OdinAddress   string
-	DepositAmount *big.Int
+	ch       chan<- eth.TransferDetails
 }
 
 // New creates a service that listens to events of a bridge contract.
-func New(cfg config.Config, ch chan<- depositer.TransferDetails, contractAddr common.Address) *Service {
+func New(cfg config.Config, contractAddr common.Address, ch chan<- eth.TransferDetails) *Service {
 	parsed, err := abi.JSON(strings.NewReader(generated.EtherBridgeABI))
 	if err != nil {
 		panic(errors.Wrap(err, "failed to parse contract ABI"))
@@ -57,11 +50,13 @@ func New(cfg config.Config, ch chan<- depositer.TransferDetails, contractAddr co
 }
 
 // Run listens to events of a bridge contract.
-func (s *Service) Run(ctx context.Context) {
+func (s *Service) Run(ctx context.Context, wg *sync.WaitGroup) {
 	err := s.subscribe(ctx)
 	if err != nil {
 		panic(errors.Wrap(err, "failed to subscribe on the contract events"))
 	}
+
+	wg.Done()
 }
 
 // subscribe subscribes on events of a bridge contract.
@@ -90,7 +85,7 @@ func (s *Service) processTransfer(ctx context.Context, event types.Log) error {
 		return nil
 	}
 
-	parsed := new(Transfer)
+	parsed := new(eth.Transfer)
 	if err := s.contract.UnpackLog(parsed, "EtherDeposited", event); err != nil {
 		return errors.Wrap(err, "failed to parse log")
 	}
@@ -100,7 +95,7 @@ func (s *Service) processTransfer(ctx context.Context, event types.Log) error {
 		return errors.Wrap(err, "failed to get block")
 	}
 
-	transferDetails := depositer.TransferDetails{
+	transferDetails := eth.TransferDetails{
 		UserAddress:     parsed.UserAddress,
 		OdinAddress:     parsed.OdinAddress,
 		DepositAmount:   parsed.DepositAmount,

@@ -18,7 +18,7 @@ type Config interface {
 	Logger() *logrus.Logger
 	EtherClient() *ethclient.Client
 	OdinClient() client.Client
-	DeployerConfig() DeployerConfig
+	DeployerConfig() *DeployerConfig
 }
 
 // Config defines global service configurations.
@@ -94,12 +94,12 @@ func (c *config) OdinClient() client.Client {
 	}
 
 	serviceClient := tx.NewServiceClient(clientConn)
-	odinClient := client.New(&serviceClient, c.Odin.BridgeAddressStorage)
+	odinClient := client.New(&serviceClient, c.Odin.BridgeAddressStorage, c.Logger())
 
 	return odinClient
 }
 
 // DeployerConfig returns the configurations of deployer service.
-func (c *config) DeployerConfig() DeployerConfig {
-	return c.Deployer
+func (c *config) DeployerConfig() *DeployerConfig {
+	return &c.Deployer
 }
