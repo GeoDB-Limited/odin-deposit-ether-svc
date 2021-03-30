@@ -51,7 +51,9 @@ func (s *Service) Run(ctx context.Context) (err error) {
 
 // deployContract deploys a bridge contract.
 func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
-	privateKey, err := crypto.HexToECDSA(s.config.DeployerConfig().PrivateKey)
+	cfg := s.config.DeployerConfig()
+
+	privateKey, err := crypto.HexToECDSA(cfg.PrivateKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "error casting private key to ECDSA")
 	}
@@ -84,12 +86,13 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 	}
 
 	transactOpts.GasPrice = gasPrice
-	transactOpts.GasLimit = s.config.DeployerConfig().GasLimit
+	transactOpts.GasLimit = cfg.GasLimit
 	transactOpts.Nonce = big.NewInt(int64(nonce))
 
-	contractAddress, _, _, err := generated.DeployEtherBridge(
+	contractAddress, _, _, err := generated.DeployBridge(
 		transactOpts,
 		s.eth,
+		cfg.SupportedTokens,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")

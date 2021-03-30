@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/cosmos/cosmos-sdk/types/tx"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -30,8 +31,9 @@ type config struct {
 
 // DeployerConfig defines the configurations of Deployer service.
 type DeployerConfig struct {
-	PrivateKey string `yaml:"private_key"`
-	GasLimit   uint64 `yaml:"gas_limit"`
+	PrivateKey      string           `yaml:"private_key"`
+	GasLimit        uint64           `yaml:"gas_limit"`
+	SupportedTokens []common.Address `yaml:"supported_tokens"`
 }
 
 // DeployerConfig defines the configurations of odin client.

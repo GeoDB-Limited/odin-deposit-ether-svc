@@ -6,4 +6,7 @@ odin:
   storage: "ADDRESS_STORAGE.txt"
 deployer:
   private_key: "ETHEREUM ACCOUNT PRIVATE KEY"
-  gas_limit: "1200000"
+  gas_limit: 3000000
+  supported_tokens:
+    - "0x577d296678535e4903d59a4c929b718e1d575e0a" # WBTC
+    - "0xc778417e063141139fce010982780140aa0cd5ab" # WETH

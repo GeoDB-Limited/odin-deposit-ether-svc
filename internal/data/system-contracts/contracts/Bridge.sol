@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.0;
 
-import "./AddressStorage.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
@@ -10,7 +9,7 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 contract Bridge is Ownable {
     using Address for address;
 
-    AddressStorage supportedTokens;
+    mapping(address => bool) public supportedTokens;
 
     event EtherDeposited(
         address indexed _userAddress,
@@ -27,7 +26,9 @@ contract Bridge is Ownable {
     event TokenRemoved(address indexed _tokenAddress);
 
     constructor(address[] memory _supportedTokens) {
-        supportedTokens = new AddressStorage(_supportedTokens);
+        for (uint256 i = 0; i < _supportedTokens.length; i++) {
+            supportedTokens[_supportedTokens[i]] = true;
+        }
     }
 
     /**
@@ -52,7 +53,7 @@ contract Bridge is Ownable {
     external returns (bool)
     {
         require(_tokenAddress.isContract(), "Given token is not a contract");
-        require(supportedTokens.contains(_tokenAddress), "Unsupported token, failed to deposit.");
+        require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
 
         bool _ok = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
         require(_ok, "Failed to transfer tokens.");
@@ -67,7 +68,7 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function addToken(address _tokenAddress) onlyOwner() external returns (bool) {
-        supportedTokens.mustAdd(_tokenAddress);
+        supportedTokens[_tokenAddress] = true;
         emit TokenAdded(_tokenAddress);
         return true;
     }
@@ -78,7 +79,7 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function removeToken(address _tokenAddress) onlyOwner() external returns (bool) {
-        supportedTokens.mustRemove(_tokenAddress);
+        supportedTokens[_tokenAddress] = false;
         emit TokenRemoved(_tokenAddress);
         return true;
     }
