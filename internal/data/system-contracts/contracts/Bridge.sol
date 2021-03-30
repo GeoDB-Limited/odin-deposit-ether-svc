@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0
-pragma solidity >=0.6.0 <0.8.0;
+pragma solidity ^0.8.0;
 
 import "./AddressStorage.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 
 contract Bridge is Ownable {
+    using Address for address;
+
     AddressStorage supportedTokens;
 
     event EtherDeposited(
@@ -28,7 +31,7 @@ contract Bridge is Ownable {
     }
 
     /**
-    * @notice Deposits ether
+    * @notice Deposits ETH
     * @param _odinAddress Address in the Odin chain
     * @return True if everything went well
     */
@@ -48,6 +51,7 @@ contract Bridge is Ownable {
     function depositToken(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
     external returns (bool)
     {
+        require(_tokenAddress.isContract(), "Given token is not a contract");
         require(supportedTokens.contains(_tokenAddress), "Unsupported token, failed to deposit.");
 
         bool _ok = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);

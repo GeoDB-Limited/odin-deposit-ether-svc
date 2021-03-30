@@ -1,6 +1,6 @@
 #!/bin/bash
 
-docker run -v $PWD:$PWD -w $PWD ethereum/solc:0.7.2 @openzeppelin/=$(pwd)/node_modules/@openzeppelin/ --overwrite --abi --bin -o ./build \
+docker run -v $PWD:$PWD -w $PWD ethereum/solc:0.8.3 @openzeppelin/=$(pwd)/node_modules/@openzeppelin/ --overwrite --abi --bin -o ./build \
 contracts/*.sol
 
 # ethereum and erc20 common bridge
