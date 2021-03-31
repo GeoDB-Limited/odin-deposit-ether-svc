@@ -11,12 +11,12 @@ contract Bridge is Ownable {
 
     mapping(address => bool) public supportedTokens;
 
-    event EtherDeposited(
+    event ETHDeposited(
         address indexed _userAddress,
         string _odinAddress,
         uint256 _depositAmount
     );
-    event TokenDeposited(
+    event ERC20Deposited(
         address indexed _userAddress,
         string _odinAddress,
         address indexed _tokenAddress,
@@ -38,7 +38,7 @@ contract Bridge is Ownable {
     */
     function depositEther(string memory _odinAddress) external payable returns (bool) {
         require(msg.value > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
-        emit EtherDeposited(msg.sender, _odinAddress, msg.value);
+        emit ETHDeposited(msg.sender, _odinAddress, msg.value);
         return true;
     }
 
@@ -55,10 +55,10 @@ contract Bridge is Ownable {
         require(_tokenAddress.isContract(), "Given token is not a contract");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
 
-        bool _ok = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
-        require(_ok, "Failed to transfer tokens.");
+        bool _success = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
+        require(_success, "Failed to transfer tokens.");
 
-        emit TokenDeposited(msg.sender, _odinAddress, _tokenAddress, _depositAmount);
+        emit ERC20Deposited(msg.sender, _odinAddress, _tokenAddress, _depositAmount);
         return true;
     }
 
@@ -67,7 +67,7 @@ contract Bridge is Ownable {
     * @param _tokenAddress Address of the ERC20 compatible token contract
     * @return True if everything went well
     */
-    function addToken(address _tokenAddress) onlyOwner() external returns (bool) {
+    function addToken(address _tokenAddress) external onlyOwner returns (bool) {
         supportedTokens[_tokenAddress] = true;
         emit TokenAdded(_tokenAddress);
         return true;
@@ -78,9 +78,36 @@ contract Bridge is Ownable {
     * @param _tokenAddress Address of the ERC20 compatible token contract
     * @return True if everything went well
     */
-    function removeToken(address _tokenAddress) onlyOwner() external returns (bool) {
+    function removeToken(address _tokenAddress) external onlyOwner returns (bool) {
         supportedTokens[_tokenAddress] = false;
         emit TokenRemoved(_tokenAddress);
+        return true;
+    }
+
+    /**
+    * @notice Transfers the amount of the deposit if an error occurred during the deposit
+    * @param _user Depositor
+    * @param _amount Deposit amount
+    * @return True if everything went well
+    */
+    function payBackEther(address _user, uint256 _amount) external onlyOwner returns (bool) {
+        (bool _success,) = _user.call{value : _amount}("");
+        require(_success, "Failed to pay back the deposit amount.");
+
+        return true;
+    }
+
+    /**
+    * @notice Transfers the amount of the deposit if an error occurred during the deposit
+    * @param _user Depositor
+    * @param _amount Deposit amount
+    * @return True if everything went well
+    */
+    function payBackToken(address _user, address _token, uint256 _amount) external onlyOwner returns (bool) {
+        require(supportedTokens[_token], "Unsupported token.");
+        bool _success = IERC20(_token).transfer(_user, _amount);
+        require(_success, "Failed to pay back");
+
         return true;
     }
 }

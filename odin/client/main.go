@@ -13,7 +13,7 @@ import (
 type Client interface {
 	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (common.Address, error)
-	ClaimMinting(<-chan types.TransferDetails)
+	ClaimWithdrawal(<-chan types.WithdrawalDetails)
 }
 
 // client defines typed wrapper for the cosmos sdk service client.
@@ -51,12 +51,12 @@ func (c *client) GetBridgeAddress() (common.Address, error) {
 	return address, nil
 }
 
-// ClaimMinting claims minting from Odin
-func (c *client) ClaimMinting(transferDetails <-chan types.TransferDetails) {
+// ClaimWithdrawal claims minting from Odin
+func (c *client) ClaimWithdrawal(transferDetails <-chan types.WithdrawalDetails) {
 	for data := range transferDetails {
 		c.log.WithFields(logrus.Fields{
 			"odin_address": data.OdinAddress,
-			"amount":       data.DepositAmount,
-		}).Info("Requersted to mint")
+			"amount":       data.WithdrawalAmount,
+		}).Info("Requested to withdraw")
 	}
 }
