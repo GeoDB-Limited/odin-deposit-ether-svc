@@ -11,6 +11,7 @@ import (
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
+	"math/big"
 )
 
 // Config defines an interface of global service configurations.
@@ -19,20 +20,23 @@ type Config interface {
 	EtherClient() *ethclient.Client
 	OdinClient() client.Client
 	DeployerConfig() *DeployerConfig
+	DepositerConfig() *DepositerConfig
+	EthereumConfig() *EthereumConfig
 }
 
 // Config defines global service configurations.
 type config struct {
-	Log      string         `yaml:"log"`
-	Ethereum EthereumConfig `yaml:"ethereum"`
-	Odin     OdinConfig     `yaml:"odin"`
-	Deployer DeployerConfig `yaml:"deployer"`
+	Log       string          `yaml:"log"`
+	Ethereum  EthereumConfig  `yaml:"ethereum"`
+	Odin      OdinConfig      `yaml:"odin"`
+	Deployer  DeployerConfig  `yaml:"deployer"`
+	Depositer DepositerConfig `yaml:"depositer"`
 }
 
 // DeployerConfig defines the configurations of Deployer service.
 type DeployerConfig struct {
-	PrivateKey      string           `yaml:"private_key"`
 	GasLimit        uint64           `yaml:"gas_limit"`
+	GasPrice        *big.Int         `yaml:"gas_price"`
 	SupportedTokens []common.Address `yaml:"supported_tokens"`
 }
 
@@ -44,7 +48,14 @@ type OdinConfig struct {
 
 // DeployerConfig defines the configurations of ethereum client.
 type EthereumConfig struct {
-	Endpoint string `yaml:"endpoint"`
+	Endpoint   string `yaml:"endpoint"`
+	PrivateKey string `yaml:"private_key"`
+}
+
+// DepositerConfig defines the configurations of the depositer svc
+type DepositerConfig struct {
+	GasLimit uint64   `yaml:"gas_limit"`
+	GasPrice *big.Int `yaml:"gas_price"`
 }
 
 // NewConfig returns global service configurations.
@@ -103,4 +114,14 @@ func (c *config) OdinClient() client.Client {
 // DeployerConfig returns the configurations of deployer service.
 func (c *config) DeployerConfig() *DeployerConfig {
 	return &c.Deployer
+}
+
+// DepositerConfig returns the configurations of depositer service.
+func (c *config) DepositerConfig() *DepositerConfig {
+	return &c.Depositer
+}
+
+// DepositerConfig returns the configurations of ethereum.
+func (c *config) EthereumConfig() *EthereumConfig {
+	return &c.Ethereum
 }

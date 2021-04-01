@@ -34,11 +34,7 @@ func Run(args []string) bool {
 	switch cmd {
 	case depositerService.FullCommand():
 		svc := depositer.New(cfg)
-		err := svc.Run(context.Background())
-		if err != nil {
-			log.WithError(err).Error("failed to run depositer")
-			return false
-		}
+		svc.Run(context.Background())
 	case deployerService.FullCommand():
 		svc := deployer.New(cfg)
 		err := svc.Run(context.Background())

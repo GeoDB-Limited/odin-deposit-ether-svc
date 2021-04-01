@@ -1,19 +1,20 @@
 package client
 
 import (
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"io/ioutil"
+	"math/big"
 )
 
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
 	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (common.Address, error)
-	ClaimWithdrawal(<-chan types.WithdrawalDetails)
+	ClaimWithdrawal(string, *big.Int) error
+	GetExchangeRate(string) (*big.Int, error)
 }
 
 // client defines typed wrapper for the cosmos sdk service client.
@@ -52,11 +53,10 @@ func (c *client) GetBridgeAddress() (common.Address, error) {
 }
 
 // ClaimWithdrawal claims minting from Odin
-func (c *client) ClaimWithdrawal(transferDetails <-chan types.WithdrawalDetails) {
-	for data := range transferDetails {
-		c.log.WithFields(logrus.Fields{
-			"odin_address": data.OdinAddress,
-			"amount":       data.WithdrawalAmount,
-		}).Info("Requested to withdraw")
-	}
+func (c *client) ClaimWithdrawal(odinAddr string, amount *big.Int) error {
+	return nil
+}
+
+func (c *client) GetExchangeRate(key string) (*big.Int, error) {
+	return big.NewInt(1), nil
 }

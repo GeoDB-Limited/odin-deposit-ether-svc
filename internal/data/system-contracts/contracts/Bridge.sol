@@ -3,7 +3,7 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "./IERC20Token.sol";
 
 
 contract Bridge is Ownable {
@@ -19,8 +19,9 @@ contract Bridge is Ownable {
     event ERC20Deposited(
         address indexed _userAddress,
         string _odinAddress,
+        uint256 _depositAmount,
         address indexed _tokenAddress,
-        uint256 _depositAmount
+        string symbol
     );
     event TokenAdded(address indexed _tokenAddress);
     event TokenRemoved(address indexed _tokenAddress);
@@ -55,10 +56,12 @@ contract Bridge is Ownable {
         require(_tokenAddress.isContract(), "Given token is not a contract");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
 
-        bool _success = IERC20(_tokenAddress).transferFrom(msg.sender, address(this), _depositAmount);
+        IERC20Token _token = IERC20Token(_tokenAddress);
+
+        bool _success = _token.transferFrom(msg.sender, address(this), _depositAmount);
         require(_success, "Failed to transfer tokens.");
 
-        emit ERC20Deposited(msg.sender, _odinAddress, _tokenAddress, _depositAmount);
+        emit ERC20Deposited(msg.sender, _odinAddress, _depositAmount, _tokenAddress, _token.symbol());
         return true;
     }
 
@@ -90,7 +93,7 @@ contract Bridge is Ownable {
     * @param _amount Deposit amount
     * @return True if everything went well
     */
-    function payBackEther(address _user, uint256 _amount) external onlyOwner returns (bool) {
+    function payBackETH(address _user, uint256 _amount) external onlyOwner returns (bool) {
         (bool _success,) = _user.call{value : _amount}("");
         require(_success, "Failed to pay back the deposit amount.");
 
@@ -103,9 +106,9 @@ contract Bridge is Ownable {
     * @param _amount Deposit amount
     * @return True if everything went well
     */
-    function payBackToken(address _user, address _token, uint256 _amount) external onlyOwner returns (bool) {
+    function payBackERC20(address _user, address _token, uint256 _amount) external onlyOwner returns (bool) {
         require(supportedTokens[_token], "Unsupported token.");
-        bool _success = IERC20(_token).transfer(_user, _amount);
+        bool _success = IERC20Token(_token).transfer(_user, _amount);
         require(_success, "Failed to pay back");
 
         return true;

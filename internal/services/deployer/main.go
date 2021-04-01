@@ -44,16 +44,12 @@ func (s *Service) Run(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to set contract address")
 	}
 
-	s.log.WithField("contract", contractAddress.Hex()).Info("Contract deployed")
-
 	return nil
 }
 
 // deployContract deploys a bridge contract.
 func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
-	cfg := s.config.DeployerConfig()
-
-	privateKey, err := crypto.HexToECDSA(cfg.PrivateKey)
+	privateKey, err := crypto.HexToECDSA(s.config.EthereumConfig().PrivateKey)
 	if err != nil {
 		return nil, errors.Wrap(err, "error casting private key to ECDSA")
 	}
@@ -75,7 +71,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to get chain id")
 	}
 
-	transactOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+	txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create transaction options")
 	}
@@ -85,18 +81,25 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to suggest gas price")
 	}
 
-	transactOpts.GasPrice = gasPrice
-	transactOpts.GasLimit = cfg.GasLimit
-	transactOpts.Nonce = big.NewInt(int64(nonce))
+	txOpts.Nonce = big.NewInt(int64(nonce))
+	txOpts.GasPrice = gasPrice
 
-	contractAddress, _, _, err := generated.DeployBridge(
-		transactOpts,
+	cfg := s.config.DeployerConfig()
+	txOpts.GasLimit = cfg.GasLimit
+
+	contractAddress, tx, _, err := generated.DeployBridge(
+		txOpts,
 		s.eth,
 		cfg.SupportedTokens,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")
 	}
+
+	s.log.WithFields(logrus.Fields{
+		"tx_hash":          tx.Hash(),
+		"contract_address": contractAddress.Hex(),
+	}).Info("Contract deployed")
 
 	return &contractAddress, nil
 }
