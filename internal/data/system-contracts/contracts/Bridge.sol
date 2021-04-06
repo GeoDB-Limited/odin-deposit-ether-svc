@@ -1,14 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0
 pragma solidity ^0.8.0;
 
+import "@openzeppelin/contracts/utils/math/SafeMath.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./IERC20Token.sol";
 
 
 contract Bridge is Ownable {
+    using SafeMath for uint256;
     using Address for address;
 
+    uint256 public depositCompensation;
+    mapping(address => bool) public compensationDeposited;
     mapping(address => bool) public supportedTokens;
 
     event ETHDeposited(
@@ -26,10 +30,12 @@ contract Bridge is Ownable {
     event TokenAdded(address indexed _tokenAddress);
     event TokenRemoved(address indexed _tokenAddress);
 
-    constructor(address[] memory _supportedTokens) {
+    constructor(address[] memory _supportedTokens, uint256 _depositCompensation) {
         for (uint256 i = 0; i < _supportedTokens.length; i++) {
             supportedTokens[_supportedTokens[i]] = true;
         }
+
+        depositCompensation = _depositCompensation;
     }
 
     /**
@@ -37,9 +43,20 @@ contract Bridge is Ownable {
     * @param _odinAddress Address in the Odin chain
     * @return True if everything went well
     */
-    function depositEther(string memory _odinAddress) external payable returns (bool) {
-        require(msg.value > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
-        emit ETHDeposited(msg.sender, _odinAddress, msg.value);
+    function depositETH(string memory _odinAddress) external payable returns (bool) {
+        uint256 _depositAmount = msg.value;
+
+        if (!compensationDeposited[msg.sender]) {
+            uint256 _depositCompensation = depositCompensation;
+            require(_depositAmount >= _depositCompensation, "Insufficient funds to deposit compensation");
+
+            compensationDeposited[msg.sender] = true;
+            _depositAmount = _depositAmount.sub(_depositCompensation);
+        }
+
+        require(_depositAmount > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
+
+        emit ETHDeposited(msg.sender, _odinAddress, _depositAmount);
         return true;
     }
 
@@ -50,11 +67,16 @@ contract Bridge is Ownable {
     * @param _depositAmount Amount to deposit
     * @return True if everything went well
     */
-    function depositToken(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
-    external returns (bool)
+    function depositERC20(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
+    external payable returns (bool)
     {
         require(_tokenAddress.isContract(), "Given token is not a contract");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
+
+        if (!compensationDeposited[msg.sender]) {
+            require(msg.value >= depositCompensation, "Insufficient funds for deposit compensation");
+            compensationDeposited[msg.sender] = true;
+        }
 
         IERC20Token _token = IERC20Token(_tokenAddress);
 
@@ -88,6 +110,16 @@ contract Bridge is Ownable {
     }
 
     /**
+    * @notice Sets a new compensation amount for paying back
+    * @param _amount Amount of compensation
+    * @return True if everything went well
+    */
+    function setDepositCompensation(uint256 _amount) external onlyOwner returns (bool) {
+        depositCompensation = _amount;
+        return true;
+    }
+
+    /**
     * @notice Transfers the amount of the deposit if an error occurred during the deposit
     * @param _user Depositor
     * @param _amount Deposit amount
@@ -96,6 +128,10 @@ contract Bridge is Ownable {
     function payBackETH(address _user, uint256 _amount) external onlyOwner returns (bool) {
         (bool _success,) = _user.call{value : _amount}("");
         require(_success, "Failed to pay back the deposit amount.");
+
+        (_success,) = msg.sender.call{value : depositCompensation}("");
+        require(_success, "Failed to pay the compensation for paying back.");
+        compensationDeposited[_user] = false;
 
         return true;
     }
@@ -107,9 +143,12 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function payBackERC20(address _user, address _token, uint256 _amount) external onlyOwner returns (bool) {
-        require(supportedTokens[_token], "Unsupported token.");
         bool _success = IERC20Token(_token).transfer(_user, _amount);
         require(_success, "Failed to pay back");
+
+        (_success,) = msg.sender.call{value : depositCompensation}("");
+        require(_success, "Failed to pay the compensation for paying back.");
+        compensationDeposited[_user] = false;
 
         return true;
     }
