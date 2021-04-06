@@ -54,6 +54,16 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "error casting private key to ECDSA")
 	}
 
+	chainId, err := s.eth.NetworkID(ctx)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get chain id")
+	}
+
+	txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to create transaction options")
+	}
+
 	publicKey := privateKey.Public()
 	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
 	if !ok {
@@ -66,31 +76,19 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to get a nonce")
 	}
 
-	chainId, err := s.eth.NetworkID(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to get chain id")
-	}
+	txOpts.Nonce = new(big.Int).SetUint64(nonce)
+	deployerCfg := s.config.DeployerConfig()
+	txOpts.GasLimit = deployerCfg.GasLimit
+	txOpts.GasPrice = deployerCfg.GasPrice
 
-	txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to create transaction options")
-	}
-
-	gasPrice, err := s.eth.SuggestGasPrice(ctx)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to suggest gas price")
-	}
-
-	txOpts.Nonce = big.NewInt(int64(nonce))
-	txOpts.GasPrice = gasPrice
-
-	cfg := s.config.DeployerConfig()
-	txOpts.GasLimit = cfg.GasLimit
+	depositerCfg := s.config.DepositerConfig()
+	depositCompensation := depositerCfg.GasPrice.Mul(depositerCfg.GasPrice, new(big.Int).SetUint64(deployerCfg.GasLimit))
 
 	contractAddress, tx, _, err := generated.DeployBridge(
 		txOpts,
 		s.eth,
-		cfg.SupportedTokens,
+		deployerCfg.SupportedTokens,
+		depositCompensation,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")
