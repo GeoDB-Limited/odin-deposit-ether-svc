@@ -3,8 +3,9 @@ module github.com/GeoDB-Limited/odin-deposit-ether-svc
 go 1.15
 
 require (
+	github.com/GeoDB-Limited/odin-core v1.0.1-0.20210406105250-69788fd0f000
 	github.com/alecthomas/kingpin v2.2.6+incompatible
-	github.com/cosmos/cosmos-sdk v0.42.1
+	github.com/cosmos/cosmos-sdk v0.42.3
 	github.com/ethereum/go-ethereum v1.10.1
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1

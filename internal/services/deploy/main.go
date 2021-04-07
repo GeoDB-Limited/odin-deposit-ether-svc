@@ -1,14 +1,12 @@
-package deployer
+package deploy
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
@@ -28,8 +26,8 @@ func New(cfg config.Config) *Service {
 	return &Service{
 		config: cfg,
 		log:    cfg.Logger(),
-		eth:    cfg.EtherClient(),
-		odin:   cfg.OdinClient(),
+		eth:    cfg.EthereumClient(),
+		odin:   client.New(cfg),
 	}
 }
 
@@ -49,46 +47,34 @@ func (s *Service) Run(ctx context.Context) (err error) {
 
 // deployContract deploys a bridge contract.
 func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
-	privateKey, err := crypto.HexToECDSA(s.config.EthereumConfig().PrivateKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "error casting private key to ECDSA")
-	}
-
 	chainId, err := s.eth.NetworkID(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get chain id")
 	}
 
-	txOpts, err := bind.NewKeyedTransactorWithChainID(privateKey, chainId)
+	address, pk := s.config.EthereumSigner()
+
+	txOpts, err := bind.NewKeyedTransactorWithChainID(pk, chainId)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create transaction options")
 	}
 
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	if !ok {
-		return nil, errors.Wrap(err, "error casting public key to ECDSA")
-	}
-
-	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-	nonce, err := s.eth.PendingNonceAt(ctx, fromAddress)
+	nonce, err := s.eth.PendingNonceAt(ctx, address)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get a nonce")
 	}
 
 	txOpts.Nonce = new(big.Int).SetUint64(nonce)
-	deployerCfg := s.config.DeployerConfig()
-	txOpts.GasLimit = deployerCfg.GasLimit
-	txOpts.GasPrice = deployerCfg.GasPrice
 
-	depositerCfg := s.config.DepositerConfig()
-	depositCompensation := depositerCfg.GasPrice.Mul(depositerCfg.GasPrice, new(big.Int).SetUint64(deployerCfg.GasLimit))
+	ethConfig := s.config.EthereumConfig()
+	txOpts.GasLimit = ethConfig.GasLimit.Uint64()
+	txOpts.GasPrice = ethConfig.GasPrice
 
 	contractAddress, tx, _, err := generated.DeployBridge(
 		txOpts,
 		s.eth,
-		deployerCfg.SupportedTokens,
-		depositCompensation,
+		s.config.DeployConfig().SupportedTokens,
+		s.config.DepositCompensation(),
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")

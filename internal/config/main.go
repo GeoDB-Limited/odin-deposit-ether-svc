@@ -1,14 +1,17 @@
 package config
 
 import (
+	"crypto/ecdsa"
 	"fmt"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
-	"github.com/cosmos/cosmos-sdk/types/tx"
+	"github.com/cosmos/cosmos-sdk/crypto/hd"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
+	sdk "github.com/cosmos/cosmos-sdk/types"
+	"github.com/cosmos/go-bip39"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"math/big"
@@ -17,45 +20,69 @@ import (
 // Config defines an interface of global service configurations.
 type Config interface {
 	Logger() *logrus.Logger
-	EtherClient() *ethclient.Client
-	OdinClient() client.Client
-	DeployerConfig() *DeployerConfig
-	DepositerConfig() *DepositerConfig
-	EthereumConfig() *EthereumConfig
+	EthereumClient() *ethclient.Client
+	DeployConfig() *DeployConfig
+	OdinConfig() *OdinChainConfig
+	EthereumConfig() *EthereumChainConfig
+	EthereumSigner() (common.Address, *ecdsa.PrivateKey)
+	OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey)
+
+	DepositCompensation() *big.Int
+	BridgeAddressStorage() string
 }
 
 // Config defines global service configurations.
 type config struct {
-	Log       string          `yaml:"log"`
-	Ethereum  EthereumConfig  `yaml:"ethereum"`
-	Odin      OdinConfig      `yaml:"odin"`
-	Deployer  DeployerConfig  `yaml:"deployer"`
-	Depositer DepositerConfig `yaml:"depositer"`
+	Log      string         `yaml:"log"`
+	Ethereum EthereumConfig `yaml:"ethereum"`
+	Odin     OdinConfig     `yaml:"odin"`
+	Deploy   DeployConfig   `yaml:"deploy"`
 }
 
-// DeployerConfig defines the configurations of Deployer service.
-type DeployerConfig struct {
-	GasLimit        uint64           `yaml:"gas_limit"`
-	GasPrice        *big.Int         `yaml:"gas_price"`
-	SupportedTokens []common.Address `yaml:"supported_tokens"`
-}
-
-// DeployerConfig defines the configurations of odin client.
+// OdinConfig defines the configurations of odin client.
 type OdinConfig struct {
-	Endpoint             string `yaml:"odin_endpoint"`
+	Chain  OdinChainConfig  `yaml:"chain"`
+	Signer OdinSignerConfig `yaml:"signer"`
+
 	BridgeAddressStorage string `yaml:"bridge_address_storage"`
 }
 
-// DeployerConfig defines the configurations of ethereum client.
+// OdinSignerConfig defines configs for odin signer
+type OdinSignerConfig struct {
+	Mnemonic string `yaml:"mnemonic"`
+}
+
+// OdinChainConfig defines configs for Odin chain
+type OdinChainConfig struct {
+	Endpoint string   `yaml:"odin_endpoint"`
+	ChainId  string   `yaml:"chain_id"`
+	Denom    string   `yaml:"denom"`
+	Memo     string   `yaml:"memo"`
+	GasPrice *big.Int `yaml:"gas_price"`
+	GasLimit *big.Int `yaml:"gas_limit"`
+}
+
+// EthereumConfig defines the configurations of ethereum client.
 type EthereumConfig struct {
-	Endpoint   string `yaml:"endpoint"`
+	Chain  EthereumChainConfig `yaml:"chain"`
+	Signer EthereumSigner      `yaml:"signer"`
+}
+
+// EthereumSigner defines configs for ethereum signer
+type EthereumSigner struct {
 	PrivateKey string `yaml:"private_key"`
 }
 
-// DepositerConfig defines the configurations of the depositer svc
-type DepositerConfig struct {
-	GasLimit uint64   `yaml:"gas_limit"`
+// EthereumChainConfig defines configs for Ethereum
+type EthereumChainConfig struct {
+	Endpoint string   `yaml:"endpoint"`
+	GasLimit *big.Int `yaml:"gas_limit"`
 	GasPrice *big.Int `yaml:"gas_price"`
+}
+
+// DeployConfig defines the configurations of Deploy service.
+type DeployConfig struct {
+	SupportedTokens []common.Address `yaml:"supported_tokens"`
 }
 
 // NewConfig returns global service configurations.
@@ -88,40 +115,71 @@ func (c *config) Logger() *logrus.Logger {
 	return logger
 }
 
-// EtherClient returns ethereum client.
-func (c *config) EtherClient() *ethclient.Client {
-	ethClient, err := ethclient.Dial(c.Ethereum.Endpoint)
+// DeployConfig returns the configurations of deploy service.
+func (c *config) DeployConfig() *DeployConfig {
+	return &c.Deploy
+}
+
+// EthereumClient returns ethereum client.
+func (c *config) EthereumClient() *ethclient.Client {
+	ethClient, err := ethclient.Dial(c.Ethereum.Chain.Endpoint)
 	if err != nil {
-		panic(errors.Wrapf(err, "failed to dial %s", c.Ethereum.Endpoint))
+		panic(errors.Wrapf(err, "failed to dial %s", c.Ethereum.Chain.Endpoint))
 	}
 
 	return ethClient
 }
 
-// OdinClient returns odin client.
-func (c *config) OdinClient() client.Client {
-	clientConn, err := grpc.Dial(c.Odin.Endpoint, grpc.WithInsecure())
+// EthereumConfig returns the configurations of ethereum.
+func (c *config) EthereumConfig() *EthereumChainConfig {
+	return &c.Ethereum.Chain
+}
+
+// EthereumSigner returns address and private key of ethereum signer.
+func (c *config) EthereumSigner() (common.Address, *ecdsa.PrivateKey) {
+	pk, err := crypto.HexToECDSA(c.Ethereum.Signer.PrivateKey)
 	if err != nil {
-		panic(errors.Wrapf(err, "failed to dial %s", c.Odin.Endpoint))
+		panic(errors.Wrap(err, "error casting private key to ECDSA"))
 	}
 
-	serviceClient := tx.NewServiceClient(clientConn)
-	odinClient := client.New(&serviceClient, c.Odin.BridgeAddressStorage, c.Logger())
+	publicKey := pk.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		panic(errors.Wrap(err, "error casting public key to ECDSA"))
+	}
 
-	return odinClient
+	accAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
+
+	return accAddress, pk
 }
 
-// DeployerConfig returns the configurations of deployer service.
-func (c *config) DeployerConfig() *DeployerConfig {
-	return &c.Deployer
+// OdinConfig returns the configurations of odin.
+func (c *config) OdinConfig() *OdinChainConfig {
+	return &c.Odin.Chain
 }
 
-// DepositerConfig returns the configurations of depositer service.
-func (c *config) DepositerConfig() *DepositerConfig {
-	return &c.Depositer
+// OdinSigner returns address and private key of odin signer.
+func (c *config) OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey) {
+	seed := bip39.NewSeed(c.Odin.Signer.Mnemonic, "")
+	master, ch := hd.ComputeMastersFromSeed(seed)
+
+	key, err := hd.DerivePrivateKeyForPath(master, ch, sdk.FullFundraiserPath)
+	if err != nil {
+		panic(errors.Wrap(err, "failed to derive odin private key for path"))
+	}
+
+	pk := secp256k1.PrivKey{Key: key}
+	accAddress := sdk.AccAddress(pk.PubKey().Address())
+
+	return accAddress, &pk
 }
 
-// DepositerConfig returns the configurations of ethereum.
-func (c *config) EthereumConfig() *EthereumConfig {
-	return &c.Ethereum
+// DepositCompensation calculates the deposit compensation from transaction params.
+func (c *config) DepositCompensation() *big.Int {
+	return c.Ethereum.Chain.GasPrice.Mul(c.Ethereum.Chain.GasPrice, c.Ethereum.Chain.GasLimit)
+}
+
+// BridgeAddressStorage returns the path to bridge address storage.
+func (c *config) BridgeAddressStorage() string {
+	return c.Odin.BridgeAddressStorage
 }
