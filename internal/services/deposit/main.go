@@ -42,6 +42,7 @@ type WithdrawalDetails struct {
 // New creates a service that allows exchanging ETH and ERC20 for odin.
 func New(cfg config.Config) *Service {
 	odinClient := client.New(cfg)
+	odinClient.WithSigner()
 	bridgeAddr, err := odinClient.GetBridgeAddress()
 	if err != nil {
 		panic(errors.Wrap(err, "failed to get bridge address"))

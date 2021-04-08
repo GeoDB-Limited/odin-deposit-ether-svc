@@ -6,6 +6,7 @@ import (
 	odinminttypes "github.com/GeoDB-Limited/odin-core/x/mint/types"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	sdktxclient "github.com/cosmos/cosmos-sdk/client/tx"
+	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
@@ -23,6 +24,8 @@ var encoding = odinapp.MakeEncodingConfig()
 
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
+	WithSigner()
+
 	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (common.Address, error)
 	ClaimWithdrawal(string, *big.Int) error
@@ -34,6 +37,14 @@ type client struct {
 	connection *grpc.ClientConn
 	config     config.Config
 	log        *logrus.Logger
+	signer     *signer
+}
+
+type signer struct {
+	Address    sdk.AccAddress
+	PrivateKey *secp256k1.PrivKey
+	Number     uint64
+	Sequence   uint64
 }
 
 // New creates a client that uses the given cosmos sdk service client.
@@ -51,8 +62,31 @@ func New(cfg config.Config) Client {
 	}
 }
 
+// WithSigner initializes odin signer to broadcast transactions
+func (c *client) WithSigner() {
+	address, pk := c.config.OdinSigner()
+
+	authClient := sdkauthtypes.NewQueryClient(c.connection)
+	response, err := authClient.Account(context.TODO(), &sdkauthtypes.QueryAccountRequest{Address: address.String()})
+	if err != nil {
+		panic(errors.Wrap(err, "failed to query account"))
+	}
+
+	var account sdkauthtypes.AccountI
+	if err := encoding.Marshaler.UnpackAny(response.Account, &account); err != nil {
+		panic(errors.Wrap(err, "failed to parse query response"))
+	}
+
+	c.signer = &signer{
+		Address:    address,
+		PrivateKey: pk,
+		Number:     account.GetAccountNumber(),
+		Sequence:   account.GetSequence(),
+	}
+}
+
 // SetBridgeAddress sets an address of the bridge contract to the storage.
-func (c client) SetBridgeAddress(address common.Address) error {
+func (c *client) SetBridgeAddress(address common.Address) error {
 	if err := ioutil.WriteFile(c.config.BridgeAddressStorage(), address.Bytes(), 0777); err != nil {
 		return errors.Wrap(err, "failed to add the address to the storage")
 	}
@@ -60,7 +94,7 @@ func (c client) SetBridgeAddress(address common.Address) error {
 }
 
 // GetBridgeAddress returns an address of the bridge contract.
-func (c client) GetBridgeAddress() (common.Address, error) {
+func (c *client) GetBridgeAddress() (common.Address, error) {
 	mintClient := odinminttypes.NewQueryClient(c.connection)
 	response, err := mintClient.EthIntegrationAddress(context.TODO(), &odinminttypes.QueryEthIntegrationAddressRequest{})
 	if err != nil {
@@ -71,75 +105,17 @@ func (c client) GetBridgeAddress() (common.Address, error) {
 }
 
 // ClaimWithdrawal claims minting from Odin
-func (c client) ClaimWithdrawal(address string, amount *big.Int) error {
-	txBuilder := encoding.TxConfig.NewTxBuilder()
-
-	odinConfig := c.config.OdinConfig()
-	txBuilder.SetMemo(odinConfig.Memo)
-	fee := sdk.NewCoins(sdk.NewCoin(odinConfig.Denom, sdk.NewIntFromBigInt(odinConfig.GasPrice)))
-	txBuilder.SetFeeAmount(fee)
-	txBuilder.SetGasLimit(odinConfig.GasLimit.Uint64())
-
-	signerAddress, signerPK := c.config.OdinSigner()
-	signer, err := c.getAccount(signerAddress.String())
-	if err != nil {
-		return errors.Wrapf(err, "failed to get signer account: %s", signerAddress.String())
-	}
-
-	sequence := signer.GetSequence()
-	accountNumber := signer.GetAccountNumber()
-
-	withdrawalAmount := sdk.NewCoins(sdk.NewCoin(odinConfig.Denom, sdk.NewIntFromBigInt(amount)))
+func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
+	withdrawalAmount := sdk.NewCoins(sdk.NewCoin(c.config.OdinConfig().Denom, sdk.NewIntFromBigInt(amount)))
 	receiverAddress, err := sdk.AccAddressFromHex(address)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse receiver address: %s", address)
 	}
 
-	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, signerAddress, receiverAddress)
-
-	if err := txBuilder.SetMsgs(&msg); err != nil {
-		return errors.Wrapf(err, "failed to set transaction builder message: %s", msg.String())
-	}
-
-	signV2 := signing.SignatureV2{
-		PubKey: signerPK.PubKey(),
-		Data: &signing.SingleSignatureData{
-			SignMode:  encoding.TxConfig.SignModeHandler().DefaultMode(),
-			Signature: nil,
-		},
-		Sequence: signer.GetSequence(),
-	}
-	err = txBuilder.SetSignatures(signV2)
+	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, c.signer.Address, receiverAddress)
+	txBytes, err := c.signTx(&msg)
 	if err != nil {
-		return errors.Wrap(err, "failed to set transaction builder signatures")
-	}
-
-	signerData := sdkauthsigning.SignerData{
-		ChainID:       odinConfig.ChainId,
-		AccountNumber: accountNumber,
-		Sequence:      sequence,
-	}
-
-	signV2, err = sdktxclient.SignWithPrivKey(
-		encoding.TxConfig.SignModeHandler().DefaultMode(),
-		signerData,
-		txBuilder,
-		signerPK,
-		encoding.TxConfig,
-		sequence,
-	)
-	if err != nil {
-		return errors.Wrap(err, "failed to sign with private key")
-	}
-
-	err = txBuilder.SetSignatures(signV2)
-	if err != nil {
-		return errors.Wrap(err, "failed to set transaction builder signatures")
-	}
-
-	txBytes, err := encoding.TxConfig.TxEncoder()(txBuilder.GetTx())
-	if err != nil {
-		return errors.Wrap(err, "failed to get transaction bytes")
+		return errors.Wrapf(err, "failed to sign the transaction to to claim withdrawal with message: %s", msg.String())
 	}
 
 	serviceClient := tx.NewServiceClient(c.connection)
@@ -160,24 +136,64 @@ func (c client) ClaimWithdrawal(address string, amount *big.Int) error {
 	return nil
 }
 
-// GetExchangeRate returns rate of assets.
-func (c client) GetExchangeRate(key string) (*big.Int, error) {
-	// TODO: implement logic
-	return big.NewInt(1), nil
+// signTx signs the transaction with the given message
+func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
+	txBuilder := encoding.TxConfig.NewTxBuilder()
+	odinConfig := c.config.OdinConfig()
+	txBuilder.SetMemo(odinConfig.Memo)
+	fee := sdk.NewCoins(sdk.NewCoin(odinConfig.Denom, sdk.NewIntFromBigInt(odinConfig.GasPrice)))
+	txBuilder.SetFeeAmount(fee)
+	txBuilder.SetGasLimit(odinConfig.GasLimit.Uint64())
+
+	if err := txBuilder.SetMsgs(msg); err != nil {
+		return nil, errors.Wrapf(err, "failed to set transaction builder message: %s", msg.String())
+	}
+
+	signV2 := signing.SignatureV2{
+		PubKey: c.signer.PrivateKey.PubKey(),
+		Data: &signing.SingleSignatureData{
+			SignMode:  encoding.TxConfig.SignModeHandler().DefaultMode(),
+			Signature: nil,
+		},
+		Sequence: c.signer.Sequence,
+	}
+	if err := txBuilder.SetSignatures(signV2); err != nil {
+		return nil, errors.Wrap(err, "failed to set transaction builder signatures")
+	}
+
+	signerData := sdkauthsigning.SignerData{
+		ChainID:       odinConfig.ChainId,
+		AccountNumber: c.signer.Number,
+		Sequence:      c.signer.Sequence,
+	}
+
+	signV2, err := sdktxclient.SignWithPrivKey(
+		encoding.TxConfig.SignModeHandler().DefaultMode(),
+		signerData,
+		txBuilder,
+		c.signer.PrivateKey,
+		encoding.TxConfig,
+		c.signer.Sequence,
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to sign with private key")
+	}
+
+	err = txBuilder.SetSignatures(signV2)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to set transaction builder signatures")
+	}
+
+	txBytes, err := encoding.TxConfig.TxEncoder()(txBuilder.GetTx())
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to get transaction bytes")
+	}
+
+	return txBytes, nil
 }
 
-// getAccount returns odin account address.
-func (c client) getAccount(address string) (sdkauthtypes.AccountI, error) {
-	authClient := sdkauthtypes.NewQueryClient(c.connection)
-	response, err := authClient.Account(context.TODO(), &sdkauthtypes.QueryAccountRequest{Address: address})
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to query account")
-	}
-
-	var account sdkauthtypes.AccountI
-	if err := encoding.Marshaler.UnpackAny(response.Account, &account); err != nil {
-		return nil, errors.Wrap(err, "failed to parse query response")
-	}
-
-	return account, nil
+// GetExchangeRate returns rate of assets.
+func (c *client) GetExchangeRate(key string) (*big.Int, error) {
+	// TODO: implement logic
+	return big.NewInt(1), nil
 }
