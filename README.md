@@ -9,10 +9,10 @@ Environmental variable `CONFIG` must be set and contain path to desired config f
 ### To deploy a new Solidity cotract:
 
 ```bash
-bridge run deploy
+odin-deposit-ether-svc run deploy
 ```
 
 ### To run deposit service:
 ```bash
-bridge run deposit
+odin-deposit-ether-svc run deposit
 ```
