@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	app "github.com/GeoDB-Limited/odin-core/app"
 	odinapp "github.com/GeoDB-Limited/odin-core/app"
 	odinminttypes "github.com/GeoDB-Limited/odin-core/x/mint/types"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
@@ -14,7 +15,6 @@ import (
 	sdkauthtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
-	"github.com/sirupsen/logrus"
 	"google.golang.org/grpc"
 	"io/ioutil"
 	"math/big"
@@ -36,34 +36,34 @@ type Client interface {
 type client struct {
 	connection *grpc.ClientConn
 	config     config.Config
-	log        *logrus.Logger
 	signer     *signer
 }
 
+// signer defines data to sign the transactions
 type signer struct {
-	Address    sdk.AccAddress
-	PrivateKey *secp256k1.PrivKey
-	Number     uint64
-	Sequence   uint64
+	address    sdk.AccAddress
+	privateKey *secp256k1.PrivKey
+	number     uint64
+	sequence   uint64
 }
 
 // New creates a client that uses the given cosmos sdk service client.
 func New(cfg config.Config) Client {
 	odinConfig := cfg.OdinConfig()
-	clientConn, err := grpc.Dial(odinConfig.Endpoint, grpc.WithInsecure())
+	conn, err := grpc.Dial(odinConfig.Endpoint, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
 		panic(errors.Wrapf(err, "failed to dial %s", odinConfig.Endpoint))
 	}
 
 	return &client{
-		connection: clientConn,
+		connection: conn,
 		config:     cfg,
-		log:        cfg.Logger(),
 	}
 }
 
 // WithSigner initializes odin signer to broadcast transactions
 func (c *client) WithSigner() {
+	app.SetBech32AddressPrefixesAndBip44CoinType(sdk.GetConfig())
 	address, pk := c.config.OdinSigner()
 
 	authClient := sdkauthtypes.NewQueryClient(c.connection)
@@ -78,10 +78,10 @@ func (c *client) WithSigner() {
 	}
 
 	c.signer = &signer{
-		Address:    address,
-		PrivateKey: pk,
-		Number:     account.GetAccountNumber(),
-		Sequence:   account.GetSequence(),
+		address:    address,
+		privateKey: pk,
+		number:     account.GetAccountNumber(),
+		sequence:   account.GetSequence(),
 	}
 }
 
@@ -112,7 +112,7 @@ func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
 		return errors.Wrapf(err, "failed to parse receiver address: %s", address)
 	}
 
-	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, c.signer.Address, receiverAddress)
+	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, c.signer.address, receiverAddress)
 	txBytes, err := c.signTx(&msg)
 	if err != nil {
 		return errors.Wrapf(err, "failed to sign the transaction to to claim withdrawal with message: %s", msg.String())
@@ -150,12 +150,12 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 	}
 
 	signV2 := signing.SignatureV2{
-		PubKey: c.signer.PrivateKey.PubKey(),
+		PubKey: c.signer.privateKey.PubKey(),
 		Data: &signing.SingleSignatureData{
 			SignMode:  encoding.TxConfig.SignModeHandler().DefaultMode(),
 			Signature: nil,
 		},
-		Sequence: c.signer.Sequence,
+		Sequence: c.signer.sequence,
 	}
 	if err := txBuilder.SetSignatures(signV2); err != nil {
 		return nil, errors.Wrap(err, "failed to set transaction builder signatures")
@@ -163,17 +163,17 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 
 	signerData := sdkauthsigning.SignerData{
 		ChainID:       odinConfig.ChainId,
-		AccountNumber: c.signer.Number,
-		Sequence:      c.signer.Sequence,
+		AccountNumber: c.signer.number,
+		Sequence:      c.signer.sequence,
 	}
 
 	signV2, err := sdktxclient.SignWithPrivKey(
 		encoding.TxConfig.SignModeHandler().DefaultMode(),
 		signerData,
 		txBuilder,
-		c.signer.PrivateKey,
+		c.signer.privateKey,
 		encoding.TxConfig,
-		c.signer.Sequence,
+		c.signer.sequence,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign with private key")

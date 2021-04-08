@@ -54,7 +54,7 @@ type OdinSignerConfig struct {
 
 // OdinChainConfig defines configs for Odin chain
 type OdinChainConfig struct {
-	Endpoint string   `yaml:"odin_endpoint"`
+	Endpoint string   `yaml:"endpoint"`
 	ChainId  string   `yaml:"chain_id"`
 	Denom    string   `yaml:"denom"`
 	Memo     string   `yaml:"memo"`

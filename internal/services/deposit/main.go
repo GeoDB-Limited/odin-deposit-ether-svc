@@ -2,11 +2,9 @@ package deposit
 
 import (
 	"context"
-	app "github.com/GeoDB-Limited/odin-core/app"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
-	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -65,8 +63,6 @@ func New(cfg config.Config) *Service {
 
 // Run performs events listening and querying the Odin minting module.
 func (s *Service) Run(ctx context.Context) {
-	app.SetBech32AddressPrefixesAndBip44CoinType(sdk.GetConfig())
-
 	withdrawals := make(chan WithdrawalDetails)
 	go s.subscribeETHTransfer(ctx, withdrawals)
 	go s.subscribeERC20Transfer(ctx, withdrawals)
@@ -84,7 +80,7 @@ func (s *Service) subscribeETHTransfer(ctx context.Context, withdrawals chan<- W
 
 	for event := range logs {
 		if event.Raw.Removed {
-			s.log.WithField("event", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+			s.log.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 			continue
 		}
 
@@ -108,7 +104,7 @@ func (s *Service) subscribeERC20Transfer(ctx context.Context, withdrawals chan<-
 
 	for event := range logs {
 		if event.Raw.Removed {
-			s.log.WithField("event", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+			s.log.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 			continue
 		}
 
@@ -174,14 +170,19 @@ func (s *Service) processETHTransfer(withdrawal WithdrawalDetails) error {
 	}
 
 	if err := s.odin.ClaimWithdrawal(withdrawal.OdinAddress, withdrawalAmount); err != nil {
-		s.log.WithFields(logrus.Fields{
-			"odin_address":      withdrawal.OdinAddress,
-			"eth_address":       withdrawal.EthereumAddress,
-			"withdrawal_amount": withdrawalAmount,
-		}).Error(err, "Failed to claim withdrawal")
-
-		return errors.Wrapf(err, "failed to claim withdrawal for user: %s ", withdrawal.OdinAddress)
+		return errors.Wrapf(
+			err,
+			"failed to claim withdrawal for user: %s amount: %s",
+			withdrawal.OdinAddress,
+			withdrawalAmount,
+		)
 	}
+
+	s.log.WithFields(logrus.Fields{
+		"ethereum_address": withdrawal.EthereumAddress,
+		"odin_address":     withdrawal.OdinAddress,
+		"amount":           withdrawal.DepositAmount,
+	}).Info("User deposited ETH")
 
 	return nil
 }
@@ -200,14 +201,20 @@ func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
 	}
 
 	if err := s.odin.ClaimWithdrawal(withdrawal.OdinAddress, withdrawalAmount); err != nil {
-		s.log.WithFields(logrus.Fields{
-			"odin_address":      withdrawal.OdinAddress,
-			"eth_address":       withdrawal.EthereumAddress,
-			"withdrawal_amount": withdrawalAmount,
-		}).Error(err, "Failed to claim withdrawal")
-
-		return errors.Wrapf(err, "failed to claim withdrawal for user: %s ", withdrawal.OdinAddress)
+		return errors.Wrapf(
+			err,
+			"failed to claim withdrawal for user: %s amount: %s",
+			withdrawal.OdinAddress,
+			withdrawalAmount,
+		)
 	}
+
+	s.log.WithFields(logrus.Fields{
+		"ethereum_address": withdrawal.EthereumAddress,
+		"odin_address":     withdrawal.OdinAddress,
+		"amount":           withdrawal.DepositAmount,
+		"token_address":    withdrawal.TokenAddress,
+	}).Info("User deposited ERC20")
 
 	return nil
 }
@@ -260,7 +267,7 @@ func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, am
 		return errors.Wrap(err, "failed to get tx options")
 	}
 
-	_, err = s.contract.PayBackETH(opts, userAddress, amount)
+	tx, err := s.contract.PayBackETH(opts, userAddress, amount)
 	if err != nil {
 		return errors.Wrap(err, "failed send tx to pay back ETH")
 	}
@@ -268,6 +275,7 @@ func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, am
 	s.log.WithFields(logrus.Fields{
 		"eth_address":    userAddress,
 		"deposit_amount": amount,
+		"tx_hash":        tx.Hash(),
 	}).Info(err, "Payed back ETH")
 
 	return nil
@@ -285,7 +293,7 @@ func (s *Service) payBackERC20(
 		return errors.Wrap(err, "failed to get tx options")
 	}
 
-	_, err = s.contract.PayBackERC20(opts, userAddress, tokenAddress, amount)
+	tx, err := s.contract.PayBackERC20(opts, userAddress, tokenAddress, amount)
 	if err != nil {
 		return errors.Wrap(err, "failed send tx to pay back ETH")
 	}
@@ -294,6 +302,7 @@ func (s *Service) payBackERC20(
 		"eth_address":    userAddress,
 		"deposit_amount": amount,
 		"token_address":  tokenAddress,
+		"tx_hash":        tx.Hash(),
 	}).Info(err, "Payed back ERC20")
 
 	return nil
