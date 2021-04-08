@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"fmt"
 	app "github.com/GeoDB-Limited/odin-core/app"
 	odinapp "github.com/GeoDB-Limited/odin-core/app"
 	odinminttypes "github.com/GeoDB-Limited/odin-core/x/mint/types"
@@ -107,12 +108,14 @@ func (c *client) GetBridgeAddress() (common.Address, error) {
 // ClaimWithdrawal claims minting from Odin
 func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
 	withdrawalAmount := sdk.NewCoins(sdk.NewCoin(c.config.OdinConfig().Denom, sdk.NewIntFromBigInt(amount)))
-	receiverAddress, err := sdk.AccAddressFromHex(address)
+	receiverAddress, err := sdk.AccAddressFromBech32(address)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse receiver address: %s", address)
 	}
 
-	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, c.signer.address, receiverAddress)
+	fmt.Println(receiverAddress.String())
+
+	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, receiverAddress, c.signer.address)
 	txBytes, err := c.signTx(&msg)
 	if err != nil {
 		return errors.Wrapf(err, "failed to sign the transaction to to claim withdrawal with message: %s", msg.String())
@@ -129,8 +132,9 @@ func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to broadcast transaction")
 	}
-	if resp.TxResponse.Code != 200 {
-		return errors.Errorf("failed to withdraw coins from minting module: %s", resp.TxResponse.Info)
+
+	if resp.TxResponse.Code != 0 {
+		return errors.Errorf("failed to withdraw coins from minting module: %s", resp.TxResponse.RawLog)
 	}
 
 	return nil

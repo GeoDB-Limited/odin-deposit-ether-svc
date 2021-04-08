@@ -276,7 +276,7 @@ func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, am
 		"eth_address":    userAddress,
 		"deposit_amount": amount,
 		"tx_hash":        tx.Hash(),
-	}).Info(err, "Payed back ETH")
+	}).Info("Payed back ETH")
 
 	return nil
 }
@@ -303,7 +303,7 @@ func (s *Service) payBackERC20(
 		"deposit_amount": amount,
 		"token_address":  tokenAddress,
 		"tx_hash":        tx.Hash(),
-	}).Info(err, "Payed back ERC20")
+	}).Info("Payed back ERC20")
 
 	return nil
 }
