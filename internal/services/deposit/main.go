@@ -13,7 +13,11 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"math/big"
-	"time"
+)
+
+const (
+	ETHDepositType = iota
+	ERC20DepositType
 )
 
 // Service defines a service that allows exchanging ETH and ERC20 for odin.
@@ -23,6 +27,16 @@ type Service struct {
 	eth      *ethclient.Client
 	contract *generated.Bridge
 	odin     client.Client
+}
+
+// WithdrawalDetails defines withdrawal options
+type WithdrawalDetails struct {
+	EthereumAddress common.Address
+	OdinAddress     string
+	DepositAmount   *big.Int // amount of user's deposit
+	TokenAddress    common.Address
+	TokenSymbol     string
+	DepositType     int
 }
 
 // New creates a service that allows exchanging ETH and ERC20 for odin.
@@ -52,12 +66,14 @@ func New(cfg config.Config) *Service {
 func (s *Service) Run(ctx context.Context) {
 	app.SetBech32AddressPrefixesAndBip44CoinType(sdk.GetConfig())
 
-	go s.subscribeETHTransfer(ctx)
-	s.subscribeERC20Transfer(ctx)
+	withdrawals := make(chan WithdrawalDetails)
+	go s.subscribeETHTransfer(ctx, withdrawals)
+	go s.subscribeERC20Transfer(ctx, withdrawals)
+	s.processTransfer(ctx, withdrawals)
 }
 
 // subscribeETHTransfer subscribes on events of a bridge contract.
-func (s *Service) subscribeETHTransfer(ctx context.Context) {
+func (s *Service) subscribeETHTransfer(ctx context.Context, withdrawals chan<- WithdrawalDetails) {
 	logs := make(chan *generated.BridgeETHDeposited)
 	subscription, err := s.contract.WatchETHDeposited(&bind.WatchOpts{Context: ctx}, logs, []common.Address{})
 	if err != nil {
@@ -71,53 +87,169 @@ func (s *Service) subscribeETHTransfer(ctx context.Context) {
 			continue
 		}
 
-		block, err := s.eth.BlockByHash(ctx, event.Raw.BlockHash)
-		if err != nil {
-			panic(errors.Wrap(err, "failed to get block"))
+		withdrawals <- WithdrawalDetails{
+			EthereumAddress: event.UserAddress,
+			OdinAddress:     event.OdinAddress,
+			DepositAmount:   event.DepositAmount,
+			DepositType:     ETHDepositType,
 		}
-
-		s.log.WithFields(logrus.Fields{
-			"ethereum_address": event.UserAddress,
-			"odin_address":     event.OdinAddress,
-			"amount":           event.DepositAmount,
-			"block_time":       time.Unix(int64(block.Time()), 0).UTC(),
-		}).Info("User deposited ETH")
-
-		s.processETHTransfer(ctx, *event)
 	}
 }
 
-// processETHTransfer exchanges ETH to odin and claims withdrawal
-func (s *Service) processETHTransfer(ctx context.Context, details generated.BridgeETHDeposited) {
-	rate, err := s.odin.GetExchangeRate("ETH")
+// subscribeERC20Transfer subscribes on events of a bridge contract.
+func (s *Service) subscribeERC20Transfer(ctx context.Context, withdrawals chan<- WithdrawalDetails) {
+	logs := make(chan *generated.BridgeERC20Deposited)
+	subscription, err := s.contract.WatchERC20Deposited(&bind.WatchOpts{Context: ctx}, logs, []common.Address{}, []common.Address{})
 	if err != nil {
-		panic(errors.Wrap(err, "failed to get the exchange rate"))
+		panic(errors.Wrap(err, "failed to subscribe on event logs"))
+	}
+	defer subscription.Unsubscribe()
+
+	for event := range logs {
+		if event.Raw.Removed {
+			s.log.WithField("event", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+			continue
+		}
+
+		withdrawals <- WithdrawalDetails{
+			EthereumAddress: event.UserAddress,
+			OdinAddress:     event.OdinAddress,
+			DepositAmount:   event.DepositAmount,
+			TokenAddress:    event.TokenAddress,
+			TokenSymbol:     event.Symbol,
+			DepositType:     ERC20DepositType,
+		}
+	}
+}
+
+// processTransfer handles events from ethereum smart contract
+func (s *Service) processTransfer(ctx context.Context, withdrawals <-chan WithdrawalDetails) {
+	for w := range withdrawals {
+		switch w.DepositType {
+		case ETHDepositType:
+			if err := s.processETHTransfer(w); err != nil {
+				s.log.WithFields(logrus.Fields{
+					"eth_address": w.EthereumAddress,
+					"amount":      w.DepositAmount,
+				}).Error(err, "Failed to process ETH transfer")
+
+				if err := s.payBackETH(ctx, w.EthereumAddress, w.DepositAmount); err != nil {
+					s.log.WithFields(logrus.Fields{
+						"eth_address": w.EthereumAddress,
+						"amount":      w.DepositAmount,
+					}).Error(err, "Failed to pay back ETH")
+				}
+			}
+		case ERC20DepositType:
+			if err := s.processERC20Transfer(w); err != nil {
+				s.log.WithFields(logrus.Fields{
+					"eth_address":   w.EthereumAddress,
+					"amount":        w.DepositAmount,
+					"token_address": w.TokenAddress,
+				}).Error(err, "Failed to process ERC20 transfer")
+
+				if err := s.payBackERC20(ctx, w.EthereumAddress, w.TokenAddress, w.DepositAmount); err != nil {
+					s.log.WithFields(logrus.Fields{
+						"eth_address":   w.EthereumAddress,
+						"amount":        w.DepositAmount,
+						"token_address": w.TokenAddress,
+					}).Error(err, "Failed to pay back ERC20")
+				}
+			}
+		}
+	}
+}
+
+// processETHTransfer exchanges ETH and claims withdrawal from odin mint module
+func (s *Service) processETHTransfer(withdrawal WithdrawalDetails) error {
+	withdrawalAmount, err := s.exchangeETH(withdrawal.EthereumAddress, withdrawal.DepositAmount)
+	if err != nil {
+		return errors.Wrapf(
+			err,
+			"failed to exchange deposited ETH for user: %s deposit: %s",
+			withdrawal.OdinAddress,
+			withdrawal.DepositAmount,
+		)
 	}
 
-	// TODO: implement logic
-	withdrawalAmount := rate.Mul(rate, details.DepositAmount)
+	if err := s.odin.ClaimWithdrawal(withdrawal.OdinAddress, withdrawalAmount); err != nil {
+		s.log.WithFields(logrus.Fields{
+			"odin_address":      withdrawal.OdinAddress,
+			"eth_address":       withdrawal.EthereumAddress,
+			"withdrawal_amount": withdrawalAmount,
+		}).Error(err, "Failed to claim withdrawal")
+
+		return errors.Wrapf(err, "failed to claim withdrawal for user: %s ", withdrawal.OdinAddress)
+	}
+
+	return nil
+}
+
+// processERC20Transfer exchanges ERC20 and claims withdrawal from odin mint module
+func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
+	withdrawalAmount, err := s.exchangeERC20(withdrawal.EthereumAddress, withdrawal.DepositAmount, withdrawal.TokenSymbol)
+	if err != nil {
+		return errors.Wrapf(
+			err,
+			"failed to exchange deposited ERC20 for user: %s deposit: %s %s",
+			withdrawal.OdinAddress,
+			withdrawal.DepositAmount,
+			withdrawal.TokenSymbol,
+		)
+	}
+
+	if err := s.odin.ClaimWithdrawal(withdrawal.OdinAddress, withdrawalAmount); err != nil {
+		s.log.WithFields(logrus.Fields{
+			"odin_address":      withdrawal.OdinAddress,
+			"eth_address":       withdrawal.EthereumAddress,
+			"withdrawal_amount": withdrawalAmount,
+		}).Error(err, "Failed to claim withdrawal")
+
+		return errors.Wrapf(err, "failed to claim withdrawal for user: %s ", withdrawal.OdinAddress)
+	}
+
+	return nil
+}
+
+// exchangeETH exchanges deposited ETH to odin tokens
+func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (*big.Int, error) {
+	rate, err := s.odin.GetExchangeRate("ETH")
+	if err != nil {
+		return &big.Int{}, errors.Wrap(err, "failed to get the exchange rate")
+	}
+
+	// TODO: implement exchange logic
+	withdrawalAmount := rate.Mul(rate, amount)
 
 	s.log.WithFields(logrus.Fields{
-		"odin_address":      details.OdinAddress,
-		"deposit_amount":    details.DepositAmount,
+		"eth_address":       ethereumAddress,
+		"deposit_amount":    amount,
 		"rate":              rate,
 		"withdrawal_amount": withdrawalAmount,
 	}).Info("Exchanged")
 
-	if err := s.odin.ClaimWithdrawal(details.OdinAddress, withdrawalAmount); err != nil {
-		s.log.WithFields(logrus.Fields{
-			"eth_address":       details.UserAddress,
-			"odin_address":      details.OdinAddress,
-			"deposit_amount":    details.DepositAmount,
-			"rate":              rate,
-			"withdrawal_amount": withdrawalAmount,
-		}).Error(err, "Failed to claim withdrawal")
+	return withdrawalAmount, nil
+}
 
-		if err := s.payBackETH(ctx, details.UserAddress, details.DepositAmount); err != nil {
-			panic(errors.Wrapf(err, "failed to pay back"))
-		}
-
+// exchangeERC20 exchanges deposited ERC20 to odin tokens
+func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int, tokenSymbol string) (*big.Int, error) {
+	rate, err := s.odin.GetExchangeRate(tokenSymbol)
+	if err != nil {
+		return &big.Int{}, errors.Wrap(err, "failed to get the exchange rate")
 	}
+
+	// TODO: implement logic
+	withdrawalAmount := rate.Mul(rate, amount)
+
+	s.log.WithFields(logrus.Fields{
+		"eth_address":       ethereumAddress,
+		"deposit_amount":    amount,
+		"token_symbol":      tokenSymbol,
+		"rate":              rate,
+		"withdrawal_amount": withdrawalAmount,
+	}).Info("Exchanged")
+
+	return withdrawalAmount, nil
 }
 
 // payBackETH pays back the deposit amount
@@ -138,70 +270,6 @@ func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, am
 	}).Info(err, "Payed back ETH")
 
 	return nil
-}
-
-// subscribeERC20Transfer subscribes on events of a bridge contract.
-func (s *Service) subscribeERC20Transfer(ctx context.Context) {
-	logs := make(chan *generated.BridgeERC20Deposited)
-	subscription, err := s.contract.WatchERC20Deposited(&bind.WatchOpts{Context: ctx}, logs, []common.Address{}, []common.Address{})
-	if err != nil {
-		panic(errors.Wrap(err, "failed to subscribe on event logs"))
-	}
-	defer subscription.Unsubscribe()
-
-	for event := range logs {
-		if event.Raw.Removed {
-			s.log.WithField("event", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
-			continue
-		}
-
-		block, err := s.eth.BlockByHash(ctx, event.Raw.BlockHash)
-		if err != nil {
-			panic(errors.Wrap(err, "failed to get block"))
-		}
-
-		s.log.WithFields(logrus.Fields{
-			"ethereum_address": event.UserAddress,
-			"odin_address":     event.OdinAddress,
-			"token_address":    event.TokenAddress,
-			"amount":           event.DepositAmount,
-			"block_time":       time.Unix(int64(block.Time()), 0).UTC(),
-		}).Info("User deposited ERC20")
-
-		s.processERC20Transfer(ctx, *event)
-	}
-}
-
-// processERC20Transfer exchanges ERC20 to odin and claims withdrawal
-func (s *Service) processERC20Transfer(ctx context.Context, details generated.BridgeERC20Deposited) {
-	rate, err := s.odin.GetExchangeRate(details.Symbol)
-	if err != nil {
-		panic(errors.Wrap(err, "failed to get the exchange rate"))
-	}
-
-	// TODO: implement logic
-	withdrawalAmount := rate.Mul(rate, details.DepositAmount)
-
-	s.log.WithFields(logrus.Fields{
-		"odin_address":      details.OdinAddress,
-		"deposit_amount":    details.DepositAmount,
-		"rate":              rate,
-		"withdrawal_amount": withdrawalAmount,
-	}).Info("Exchanged")
-
-	if err := s.odin.ClaimWithdrawal(details.OdinAddress, withdrawalAmount); err != nil {
-		s.log.WithFields(logrus.Fields{
-			"eth_address":       details.UserAddress,
-			"odin_address":      details.OdinAddress,
-			"deposit_amount":    details.DepositAmount,
-			"rate":              rate,
-			"withdrawal_amount": withdrawalAmount,
-		}).Error(err, "Failed to claim withdrawal")
-
-		if err := s.payBackERC20(ctx, details.UserAddress, details.TokenAddress, details.DepositAmount); err != nil {
-			panic(errors.Wrapf(err, "failed to pay back"))
-		}
-	}
 }
 
 // payBackERC20 pays back the deposit amount

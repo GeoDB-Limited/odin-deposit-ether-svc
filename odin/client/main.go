@@ -76,7 +76,7 @@ func (c client) ClaimWithdrawal(address string, amount *big.Int) error {
 
 	odinConfig := c.config.OdinConfig()
 	txBuilder.SetMemo(odinConfig.Memo)
-	fee := sdk.NewCoins(sdk.NewCoin(odinConfig.Denom, sdk.NewIntFromBigInt(amount)))
+	fee := sdk.NewCoins(sdk.NewCoin(odinConfig.Denom, sdk.NewIntFromBigInt(odinConfig.GasPrice)))
 	txBuilder.SetFeeAmount(fee)
 	txBuilder.SetGasLimit(odinConfig.GasLimit.Uint64())
 
