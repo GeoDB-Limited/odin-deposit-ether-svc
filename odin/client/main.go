@@ -17,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
-	"io/ioutil"
 	"math/big"
 )
 
@@ -27,7 +26,6 @@ var encoding = odinapp.MakeEncodingConfig()
 type Client interface {
 	WithSigner()
 	GetAccount(string) (sdkauthtypes.AccountI, error)
-	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (common.Address, error)
 	ClaimWithdrawal(string, *big.Int) error
 	GetExchangeRate(string) (*big.Int, error)
@@ -69,14 +67,6 @@ func (c *client) WithSigner() {
 		address:    address,
 		privateKey: pk,
 	}
-}
-
-// SetBridgeAddress sets an address of the bridge contract to the storage.
-func (c *client) SetBridgeAddress(address common.Address) error {
-	if err := ioutil.WriteFile(c.config.BridgeAddressStorage(), address.Bytes(), 0777); err != nil {
-		return errors.Wrap(err, "failed to add the address to the storage")
-	}
-	return nil
 }
 
 // GetBridgeAddress returns an address of the bridge contract.

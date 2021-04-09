@@ -50,6 +50,7 @@ type OdinConfig struct {
 // OdinSignerConfig defines configs for odin signer
 type OdinSignerConfig struct {
 	Mnemonic string `yaml:"mnemonic"`
+	Password string `yaml:"password"`
 }
 
 // OdinChainConfig defines configs for Odin chain
@@ -160,7 +161,7 @@ func (c *config) OdinConfig() *OdinChainConfig {
 
 // OdinSigner returns address and private key of odin signer.
 func (c *config) OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey) {
-	seed := bip39.NewSeed(c.Odin.Signer.Mnemonic, "")
+	seed := bip39.NewSeed(c.Odin.Signer.Mnemonic, c.Odin.Signer.Password)
 	master, ch := hd.ComputeMastersFromSeed(seed)
 
 	key, err := hd.DerivePrivateKeyForPath(master, ch, sdk.FullFundraiserPath)

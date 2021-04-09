@@ -4,12 +4,12 @@ import (
 	"context"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
+	"io/ioutil"
 	"math/big"
 )
 
@@ -18,7 +18,6 @@ type Service struct {
 	config config.Config
 	log    *logrus.Logger
 	eth    *ethclient.Client
-	odin   client.Client
 }
 
 // New creates a service that deploys a bridge contract.
@@ -27,7 +26,6 @@ func New(cfg config.Config) *Service {
 		config: cfg,
 		log:    cfg.Logger(),
 		eth:    cfg.EthereumClient(),
-		odin:   client.New(cfg),
 	}
 }
 
@@ -38,7 +36,7 @@ func (s *Service) Run(ctx context.Context) (err error) {
 		return errors.Wrap(err, "failed to deploy contract")
 	}
 
-	if err := s.odin.SetBridgeAddress(*contractAddress); err != nil {
+	if err := s.saveBridgeAddress(*contractAddress); err != nil {
 		return errors.Wrap(err, "failed to set contract address")
 	}
 
@@ -92,4 +90,12 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 	}).Info("Contract deployed")
 
 	return &contractAddress, nil
+}
+
+// SetBridgeAddress sets an address of the bridge contract to the storage.
+func (s *Service) saveBridgeAddress(address common.Address) error {
+	if err := ioutil.WriteFile(s.config.BridgeAddressStorage(), address.Bytes(), 0777); err != nil {
+		return errors.Wrap(err, "failed to add the address to the storage")
+	}
+	return nil
 }
