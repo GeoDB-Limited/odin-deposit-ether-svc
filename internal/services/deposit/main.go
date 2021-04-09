@@ -14,6 +14,8 @@ import (
 )
 
 const (
+	ETHExchangeSymbol = "ETH" // used to get an exchange rate of ETH
+
 	ETHDepositType = iota
 	ERC20DepositType
 )
@@ -21,8 +23,9 @@ const (
 // Service defines a service that allows exchanging ETH and ERC20 for odin.
 type Service struct {
 	config   config.Config
-	log      *logrus.Logger
-	eth      *ethclient.Client
+	context  context.Context
+	logger   *logrus.Logger
+	ethereum *ethclient.Client
 	contract *generated.Bridge
 	odin     client.Client
 }
@@ -38,9 +41,8 @@ type WithdrawalDetails struct {
 }
 
 // New creates a service that allows exchanging ETH and ERC20 for odin.
-func New(cfg config.Config) *Service {
-	odinClient := client.New(cfg)
-	odinClient.WithSigner()
+func New(ctx context.Context, cfg config.Config) *Service {
+	odinClient := client.New(ctx, cfg).WithSigner()
 	bridgeAddr, err := odinClient.GetBridgeAddress()
 	if err != nil {
 		panic(errors.Wrap(err, "failed to get bridge address"))
@@ -54,25 +56,26 @@ func New(cfg config.Config) *Service {
 
 	return &Service{
 		config:   cfg,
-		log:      cfg.Logger(),
+		context:  ctx,
+		logger:   cfg.Logger(),
 		odin:     odinClient,
-		eth:      etherClient,
+		ethereum: etherClient,
 		contract: bridge,
 	}
 }
 
 // Run performs events listening and querying the Odin minting module.
-func (s *Service) Run(ctx context.Context) {
+func (s *Service) Run() {
 	withdrawals := make(chan WithdrawalDetails)
-	go s.subscribeETHTransfer(ctx, withdrawals)
-	go s.subscribeERC20Transfer(ctx, withdrawals)
-	s.processTransfer(ctx, withdrawals)
+	go s.subscribeETHTransfer(withdrawals)
+	go s.subscribeERC20Transfer(withdrawals)
+	s.processTransfer(withdrawals)
 }
 
 // subscribeETHTransfer subscribes on events of a bridge contract.
-func (s *Service) subscribeETHTransfer(ctx context.Context, withdrawals chan<- WithdrawalDetails) {
+func (s *Service) subscribeETHTransfer(withdrawals chan<- WithdrawalDetails) {
 	logs := make(chan *generated.BridgeETHDeposited)
-	subscription, err := s.contract.WatchETHDeposited(&bind.WatchOpts{Context: ctx}, logs, []common.Address{})
+	subscription, err := s.contract.WatchETHDeposited(&bind.WatchOpts{Context: s.context}, logs, []common.Address{})
 	if err != nil {
 		panic(errors.Wrap(err, "failed to subscribe on event logs"))
 	}
@@ -80,7 +83,7 @@ func (s *Service) subscribeETHTransfer(ctx context.Context, withdrawals chan<- W
 
 	for event := range logs {
 		if event.Raw.Removed {
-			s.log.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+			s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 			continue
 		}
 
@@ -94,9 +97,9 @@ func (s *Service) subscribeETHTransfer(ctx context.Context, withdrawals chan<- W
 }
 
 // subscribeERC20Transfer subscribes on events of a bridge contract.
-func (s *Service) subscribeERC20Transfer(ctx context.Context, withdrawals chan<- WithdrawalDetails) {
+func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 	logs := make(chan *generated.BridgeERC20Deposited)
-	subscription, err := s.contract.WatchERC20Deposited(&bind.WatchOpts{Context: ctx}, logs, []common.Address{}, []common.Address{})
+	subscription, err := s.contract.WatchERC20Deposited(&bind.WatchOpts{Context: s.context}, logs, []common.Address{}, []common.Address{})
 	if err != nil {
 		panic(errors.Wrap(err, "failed to subscribe on event logs"))
 	}
@@ -104,7 +107,7 @@ func (s *Service) subscribeERC20Transfer(ctx context.Context, withdrawals chan<-
 
 	for event := range logs {
 		if event.Raw.Removed {
-			s.log.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+			s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
 			continue
 		}
 
@@ -120,18 +123,18 @@ func (s *Service) subscribeERC20Transfer(ctx context.Context, withdrawals chan<-
 }
 
 // processTransfer handles events from ethereum smart contract
-func (s *Service) processTransfer(ctx context.Context, withdrawals <-chan WithdrawalDetails) {
+func (s *Service) processTransfer(withdrawals <-chan WithdrawalDetails) {
 	for w := range withdrawals {
 		switch w.DepositType {
 		case ETHDepositType:
 			if err := s.processETHTransfer(w); err != nil {
-				s.log.WithFields(logrus.Fields{
+				s.logger.WithFields(logrus.Fields{
 					"eth_address": w.EthereumAddress,
 					"amount":      w.DepositAmount,
 				}).Error(err, "Failed to process ETH transfer")
 
-				if err := s.payBackETH(ctx, w.EthereumAddress, w.DepositAmount); err != nil {
-					s.log.WithFields(logrus.Fields{
+				if err := s.payBackETH(w.EthereumAddress, w.DepositAmount); err != nil {
+					s.logger.WithFields(logrus.Fields{
 						"eth_address": w.EthereumAddress,
 						"amount":      w.DepositAmount,
 					}).Error(err, "Failed to pay back ETH")
@@ -139,14 +142,14 @@ func (s *Service) processTransfer(ctx context.Context, withdrawals <-chan Withdr
 			}
 		case ERC20DepositType:
 			if err := s.processERC20Transfer(w); err != nil {
-				s.log.WithFields(logrus.Fields{
+				s.logger.WithFields(logrus.Fields{
 					"eth_address":   w.EthereumAddress,
 					"amount":        w.DepositAmount,
 					"token_address": w.TokenAddress,
 				}).Error(err, "Failed to process ERC20 transfer")
 
-				if err := s.payBackERC20(ctx, w.EthereumAddress, w.TokenAddress, w.DepositAmount); err != nil {
-					s.log.WithFields(logrus.Fields{
+				if err := s.payBackERC20(w.EthereumAddress, w.TokenAddress, w.DepositAmount); err != nil {
+					s.logger.WithFields(logrus.Fields{
 						"eth_address":   w.EthereumAddress,
 						"amount":        w.DepositAmount,
 						"token_address": w.TokenAddress,
@@ -178,7 +181,7 @@ func (s *Service) processETHTransfer(withdrawal WithdrawalDetails) error {
 		)
 	}
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"ethereum_address": withdrawal.EthereumAddress,
 		"odin_address":     withdrawal.OdinAddress,
 		"amount":           withdrawal.DepositAmount,
@@ -209,7 +212,7 @@ func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
 		)
 	}
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"ethereum_address": withdrawal.EthereumAddress,
 		"odin_address":     withdrawal.OdinAddress,
 		"amount":           withdrawal.DepositAmount,
@@ -221,7 +224,7 @@ func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
 
 // exchangeETH exchanges deposited ETH to odin tokens
 func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (*big.Int, error) {
-	rate, err := s.odin.GetExchangeRate("ETH")
+	rate, err := s.odin.GetExchangeRate(ETHExchangeSymbol)
 	if err != nil {
 		return &big.Int{}, errors.Wrap(err, "failed to get the exchange rate")
 	}
@@ -229,7 +232,7 @@ func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (
 	// TODO: implement exchange logic
 	withdrawalAmount := rate.Mul(rate, amount)
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
 		"rate":              rate,
@@ -249,7 +252,7 @@ func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int,
 	// TODO: implement logic
 	withdrawalAmount := rate.Mul(rate, amount)
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
 		"token_symbol":      tokenSymbol,
@@ -261,8 +264,8 @@ func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int,
 }
 
 // payBackETH pays back the deposit amount
-func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, amount *big.Int) error {
-	opts, err := s.getTxOpts(ctx)
+func (s *Service) payBackETH(userAddress common.Address, amount *big.Int) error {
+	opts, err := s.getTxOpts()
 	if err != nil {
 		return errors.Wrap(err, "failed to get tx options")
 	}
@@ -272,7 +275,7 @@ func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, am
 		return errors.Wrap(err, "failed send tx to pay back ETH")
 	}
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"eth_address":    userAddress,
 		"deposit_amount": amount,
 		"tx_hash":        tx.Hash(),
@@ -282,13 +285,8 @@ func (s *Service) payBackETH(ctx context.Context, userAddress common.Address, am
 }
 
 // payBackERC20 pays back the deposit amount
-func (s *Service) payBackERC20(
-	ctx context.Context,
-	userAddress common.Address,
-	tokenAddress common.Address,
-	amount *big.Int,
-) error {
-	opts, err := s.getTxOpts(ctx)
+func (s *Service) payBackERC20(userAddress common.Address, tokenAddress common.Address, amount *big.Int) error {
+	opts, err := s.getTxOpts()
 	if err != nil {
 		return errors.Wrap(err, "failed to get tx options")
 	}
@@ -298,7 +296,7 @@ func (s *Service) payBackERC20(
 		return errors.Wrap(err, "failed send tx to pay back ETH")
 	}
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"eth_address":    userAddress,
 		"deposit_amount": amount,
 		"token_address":  tokenAddress,
@@ -309,10 +307,10 @@ func (s *Service) payBackERC20(
 }
 
 // getTxOpts returns the options to broadcast signed tx
-func (s *Service) getTxOpts(ctx context.Context) (*bind.TransactOpts, error) {
+func (s *Service) getTxOpts() (*bind.TransactOpts, error) {
 	_, pk := s.config.EthereumSigner()
 
-	chainId, err := s.eth.NetworkID(ctx)
+	chainId, err := s.ethereum.NetworkID(s.context)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get chain id")
 	}

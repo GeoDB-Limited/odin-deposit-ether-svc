@@ -15,23 +15,25 @@ import (
 
 // Service defines a service that deploys a bridge contract.
 type Service struct {
-	config config.Config
-	log    *logrus.Logger
-	eth    *ethclient.Client
+	config   config.Config
+	context  context.Context
+	logger   *logrus.Logger
+	ethereum *ethclient.Client
 }
 
 // New creates a service that deploys a bridge contract.
-func New(cfg config.Config) *Service {
+func New(ctx context.Context, cfg config.Config) *Service {
 	return &Service{
-		config: cfg,
-		log:    cfg.Logger(),
-		eth:    cfg.EthereumClient(),
+		config:   cfg,
+		context:  ctx,
+		logger:   cfg.Logger(),
+		ethereum: cfg.EthereumClient(),
 	}
 }
 
 // Run performs deploying a bridge smart contract.
-func (s *Service) Run(ctx context.Context) (err error) {
-	contractAddress, err := s.deployContract(ctx)
+func (s *Service) Run() (err error) {
+	contractAddress, err := s.deployContract()
 	if err != nil {
 		return errors.Wrap(err, "failed to deploy contract")
 	}
@@ -44,8 +46,8 @@ func (s *Service) Run(ctx context.Context) (err error) {
 }
 
 // deployContract deploys a bridge contract.
-func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
-	chainId, err := s.eth.NetworkID(ctx)
+func (s *Service) deployContract() (*common.Address, error) {
+	chainId, err := s.ethereum.NetworkID(s.context)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get chain id")
 	}
@@ -57,7 +59,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to create transaction options")
 	}
 
-	nonce, err := s.eth.PendingNonceAt(ctx, address)
+	nonce, err := s.ethereum.PendingNonceAt(s.context, address)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to get a nonce")
 	}
@@ -67,7 +69,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 	ethConfig := s.config.EthereumConfig()
 	txOpts.GasLimit = ethConfig.GasLimit.Uint64()
 
-	gasPrice, err := s.eth.SuggestGasPrice(ctx)
+	gasPrice, err := s.ethereum.SuggestGasPrice(s.context)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to suggest gas price")
 	}
@@ -76,7 +78,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 
 	contractAddress, tx, _, err := generated.DeployBridge(
 		txOpts,
-		s.eth,
+		s.ethereum,
 		s.config.DeployConfig().SupportedTokens,
 		s.config.DepositCompensation(),
 	)
@@ -84,7 +86,7 @@ func (s *Service) deployContract(ctx context.Context) (*common.Address, error) {
 		return nil, errors.Wrap(err, "failed to submit contract tx")
 	}
 
-	s.log.WithFields(logrus.Fields{
+	s.logger.WithFields(logrus.Fields{
 		"tx_hash":          tx.Hash(),
 		"contract_address": contractAddress.Hex(),
 	}).Info("Contract deployed")

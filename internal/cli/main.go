@@ -11,6 +11,7 @@ import (
 
 func Run(args []string) bool {
 	cfg := config.NewConfig(os.Getenv("CONFIG"))
+	ctx := context.Background()
 	log := cfg.Logger()
 
 	defer func() {
@@ -33,13 +34,10 @@ func Run(args []string) bool {
 
 	switch cmd {
 	case depositService.FullCommand():
-		svc := deposit.New(cfg)
-		svc.Run(context.Background())
+		deposit.New(ctx, cfg).Run()
 	case deployService.FullCommand():
-		svc := deploy.New(cfg)
-		err := svc.Run(context.Background())
-		if err != nil {
-			log.WithError(err).Error("failed to run deploy")
+		if err := deploy.New(ctx, cfg).Run(); err != nil {
+			log.WithError(err).Error("failed to run deploy service")
 			return false
 		}
 	default:

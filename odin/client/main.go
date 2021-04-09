@@ -24,7 +24,7 @@ var encoding = odinapp.MakeEncodingConfig()
 
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
-	WithSigner()
+	WithSigner() Client
 	GetAccount(string) (sdkauthtypes.AccountI, error)
 	GetBridgeAddress() (common.Address, error)
 	ClaimWithdrawal(string, *big.Int) error
@@ -35,6 +35,7 @@ type Client interface {
 type client struct {
 	connection *grpc.ClientConn
 	config     config.Config
+	context    context.Context
 	signer     *signer
 }
 
@@ -45,7 +46,7 @@ type signer struct {
 }
 
 // New creates a client that uses the given cosmos sdk service client.
-func New(cfg config.Config) Client {
+func New(ctx context.Context, cfg config.Config) Client {
 	odinConfig := cfg.OdinConfig()
 	conn, err := grpc.Dial(odinConfig.Endpoint, grpc.WithInsecure(), grpc.WithBlock())
 	if err != nil {
@@ -55,24 +56,30 @@ func New(cfg config.Config) Client {
 	return &client{
 		connection: conn,
 		config:     cfg,
+		context:    ctx,
 	}
 }
 
 // WithSigner initializes odin signer to broadcast transactions
-func (c *client) WithSigner() {
+func (c *client) WithSigner() Client {
 	app.SetBech32AddressPrefixesAndBip44CoinType(sdk.GetConfig())
 	address, pk := c.config.OdinSigner()
 
-	c.signer = &signer{
-		address:    address,
-		privateKey: pk,
+	return &client{
+		connection: c.connection,
+		config:     c.config,
+		context:    c.context,
+		signer: &signer{
+			privateKey: pk,
+			address:    address,
+		},
 	}
 }
 
 // GetBridgeAddress returns an address of the bridge contract.
 func (c *client) GetBridgeAddress() (common.Address, error) {
 	mintClient := odinminttypes.NewQueryClient(c.connection)
-	response, err := mintClient.EthIntegrationAddress(context.TODO(), &odinminttypes.QueryEthIntegrationAddressRequest{})
+	response, err := mintClient.EthIntegrationAddress(c.context, &odinminttypes.QueryEthIntegrationAddressRequest{})
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "failed to query ethereum integration address")
 	}
@@ -98,7 +105,7 @@ func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
 
 	serviceClient := tx.NewServiceClient(c.connection)
 	resp, err := serviceClient.BroadcastTx(
-		context.Background(),
+		c.context,
 		&tx.BroadcastTxRequest{
 			Mode:    tx.BroadcastMode_BROADCAST_MODE_SYNC,
 			TxBytes: txBytes,
@@ -181,7 +188,7 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 // GetAccount returns the odin account by given address
 func (c *client) GetAccount(address string) (sdkauthtypes.AccountI, error) {
 	authClient := sdkauthtypes.NewQueryClient(c.connection)
-	response, err := authClient.Account(context.TODO(), &sdkauthtypes.QueryAccountRequest{Address: address})
+	response, err := authClient.Account(c.context, &sdkauthtypes.QueryAccountRequest{Address: address})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to query account")
 	}
