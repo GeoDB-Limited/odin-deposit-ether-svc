@@ -26,7 +26,7 @@ var encoding = odinapp.MakeEncodingConfig()
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
 	WithSigner()
-
+	GetAccount(string) (sdkauthtypes.AccountI, error)
 	SetBridgeAddress(common.Address) error
 	GetBridgeAddress() (common.Address, error)
 	ClaimWithdrawal(string, *big.Int) error
@@ -44,8 +44,6 @@ type client struct {
 type signer struct {
 	address    sdk.AccAddress
 	privateKey *secp256k1.PrivKey
-	number     uint64
-	sequence   uint64
 }
 
 // New creates a client that uses the given cosmos sdk service client.
@@ -67,22 +65,9 @@ func (c *client) WithSigner() {
 	app.SetBech32AddressPrefixesAndBip44CoinType(sdk.GetConfig())
 	address, pk := c.config.OdinSigner()
 
-	authClient := sdkauthtypes.NewQueryClient(c.connection)
-	response, err := authClient.Account(context.TODO(), &sdkauthtypes.QueryAccountRequest{Address: address.String()})
-	if err != nil {
-		panic(errors.Wrap(err, "failed to query account"))
-	}
-
-	var account sdkauthtypes.AccountI
-	if err := encoding.Marshaler.UnpackAny(response.Account, &account); err != nil {
-		panic(errors.Wrap(err, "failed to parse query response"))
-	}
-
 	c.signer = &signer{
 		address:    address,
 		privateKey: pk,
-		number:     account.GetAccountNumber(),
-		sequence:   account.GetSequence(),
 	}
 }
 
@@ -153,13 +138,20 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 		return nil, errors.Wrapf(err, "failed to set transaction builder message: %s", msg.String())
 	}
 
+	account, err := c.GetAccount(c.signer.address.String())
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to get account of signer: %s", c.signer.address.String())
+	}
+	accSequence := account.GetSequence()
+	accNumber := account.GetAccountNumber()
+
 	signV2 := signing.SignatureV2{
 		PubKey: c.signer.privateKey.PubKey(),
 		Data: &signing.SingleSignatureData{
 			SignMode:  encoding.TxConfig.SignModeHandler().DefaultMode(),
 			Signature: nil,
 		},
-		Sequence: c.signer.sequence,
+		Sequence: accSequence,
 	}
 	if err := txBuilder.SetSignatures(signV2); err != nil {
 		return nil, errors.Wrap(err, "failed to set transaction builder signatures")
@@ -167,17 +159,17 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 
 	signerData := sdkauthsigning.SignerData{
 		ChainID:       odinConfig.ChainId,
-		AccountNumber: c.signer.number,
-		Sequence:      c.signer.sequence,
+		AccountNumber: accNumber,
+		Sequence:      accSequence,
 	}
 
-	signV2, err := sdktxclient.SignWithPrivKey(
+	signV2, err = sdktxclient.SignWithPrivKey(
 		encoding.TxConfig.SignModeHandler().DefaultMode(),
 		signerData,
 		txBuilder,
 		c.signer.privateKey,
 		encoding.TxConfig,
-		c.signer.sequence,
+		accSequence,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to sign with private key")
@@ -194,6 +186,22 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 	}
 
 	return txBytes, nil
+}
+
+// GetAccount returns the odin account by given address
+func (c *client) GetAccount(address string) (sdkauthtypes.AccountI, error) {
+	authClient := sdkauthtypes.NewQueryClient(c.connection)
+	response, err := authClient.Account(context.TODO(), &sdkauthtypes.QueryAccountRequest{Address: address})
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to query account")
+	}
+
+	var account sdkauthtypes.AccountI
+	if err := encoding.Marshaler.UnpackAny(response.Account, &account); err != nil {
+		return nil, errors.Wrap(err, "failed to parse query response")
+	}
+
+	return account, nil
 }
 
 // GetExchangeRate returns rate of assets.

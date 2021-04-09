@@ -12,6 +12,9 @@ RUN go get -d -v
 # Install the package
 RUN go install -v
 
+# set environment variables
+ENV CONFIG=config.yaml
+
 # This container exposes port 80 to the outside world
 EXPOSE 80
 

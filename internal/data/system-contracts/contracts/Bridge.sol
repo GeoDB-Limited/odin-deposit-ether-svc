@@ -126,10 +126,10 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function payBackETH(address _user, uint256 _amount) external onlyOwner returns (bool) {
-        (bool _success,) = _user.call{value : _amount}("");
+        (bool _success,) = payable(_user).call{value : _amount}("");
         require(_success, "Failed to pay back the deposit amount.");
 
-        (_success,) = msg.sender.call{value : depositCompensation}("");
+        (_success,) = payable(msg.sender).call{value : depositCompensation}("");
         require(_success, "Failed to pay the compensation for paying back.");
         compensationDeposited[_user] = false;
 
@@ -146,7 +146,7 @@ contract Bridge is Ownable {
         bool _success = IERC20Token(_token).transfer(_user, _amount);
         require(_success, "Failed to pay back");
 
-        (_success,) = msg.sender.call{value : depositCompensation}("");
+        (_success,) = payable(msg.sender).call{value : depositCompensation}("");
         require(_success, "Failed to pay the compensation for paying back.");
         compensationDeposited[_user] = false;
 
