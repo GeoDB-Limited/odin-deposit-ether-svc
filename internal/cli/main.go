@@ -3,8 +3,8 @@ package cli
 import (
 	"context"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/deployer"
-	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/depositer"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/deploy"
+	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/services/deposit"
 	"github.com/alecthomas/kingpin"
 	"os"
 )
@@ -22,8 +22,8 @@ func Run(args []string) bool {
 	app := kingpin.New("odin-deposit-ether-svc", "")
 
 	runCmd := app.Command("run", "run command")
-	depositerService := runCmd.Command("depositer", "run a service to deposit into Odin")
-	deployerService := runCmd.Command("deployer", "run a service to deploy a bridge contract")
+	depositService := runCmd.Command("deposit", "run a service to deposit into Odin")
+	deployService := runCmd.Command("deploy", "run a service to deploy a bridge contract")
 
 	cmd, err := app.Parse(args[1:])
 	if err != nil {
@@ -32,18 +32,14 @@ func Run(args []string) bool {
 	}
 
 	switch cmd {
-	case depositerService.FullCommand():
-		svc := depositer.New(cfg)
+	case depositService.FullCommand():
+		svc := deposit.New(cfg)
+		svc.Run(context.Background())
+	case deployService.FullCommand():
+		svc := deploy.New(cfg)
 		err := svc.Run(context.Background())
 		if err != nil {
-			log.WithError(err).Error("failed to run depositer")
-			return false
-		}
-	case deployerService.FullCommand():
-		svc := deployer.New(cfg)
-		err := svc.Run(context.Background())
-		if err != nil {
-			log.WithError(err).Error("failed to run deployer")
+			log.WithError(err).Error("failed to run deploy")
 			return false
 		}
 	default:
