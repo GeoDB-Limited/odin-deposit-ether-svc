@@ -5,7 +5,8 @@ import (
 	"fmt"
 	app "github.com/GeoDB-Limited/odin-core/app"
 	odinapp "github.com/GeoDB-Limited/odin-core/app"
-	odinminttypes "github.com/GeoDB-Limited/odin-core/x/mint/types"
+	odincoinswap "github.com/GeoDB-Limited/odin-core/x/coinswap/types"
+	odinmint "github.com/GeoDB-Limited/odin-core/x/mint/types"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	sdktxclient "github.com/cosmos/cosmos-sdk/client/tx"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
@@ -13,22 +14,23 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/tx"
 	"github.com/cosmos/cosmos-sdk/types/tx/signing"
 	sdkauthsigning "github.com/cosmos/cosmos-sdk/x/auth/signing"
-	sdkauthtypes "github.com/cosmos/cosmos-sdk/x/auth/types"
+	sdkauth "github.com/cosmos/cosmos-sdk/x/auth/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
-	"math/big"
 )
 
-var encoding = odinapp.MakeEncodingConfig()
+var (
+	encoding = odinapp.MakeEncodingConfig()
+)
 
 // Client defines an interface for the wrapped cosmos sdk service client.
 type Client interface {
 	WithSigner() Client
-	GetAccount(string) (sdkauthtypes.AccountI, error)
+	GetAccount(string) (sdkauth.AccountI, error)
 	GetBridgeAddress() (common.Address, error)
-	ClaimWithdrawal(string, *big.Int) error
-	GetExchangeRate(string) (*big.Int, error)
+	ClaimWithdrawal(string, sdk.Coin) error
+	GetExchangeRate(string) (sdk.Dec, error)
 }
 
 // client defines typed wrapper for the cosmos sdk service client.
@@ -78,8 +80,8 @@ func (c *client) WithSigner() Client {
 
 // GetBridgeAddress returns an address of the bridge contract.
 func (c *client) GetBridgeAddress() (common.Address, error) {
-	mintClient := odinminttypes.NewQueryClient(c.connection)
-	response, err := mintClient.EthIntegrationAddress(c.context, &odinminttypes.QueryEthIntegrationAddressRequest{})
+	mintClient := odinmint.NewQueryClient(c.connection)
+	response, err := mintClient.EthIntegrationAddress(c.context, &odinmint.QueryEthIntegrationAddressRequest{})
 	if err != nil {
 		return common.Address{}, errors.Wrap(err, "failed to query ethereum integration address")
 	}
@@ -88,8 +90,7 @@ func (c *client) GetBridgeAddress() (common.Address, error) {
 }
 
 // ClaimWithdrawal claims minting from Odin
-func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
-	withdrawalAmount := sdk.NewCoins(sdk.NewCoin(c.config.OdinConfig().Denom, sdk.NewIntFromBigInt(amount)))
+func (c *client) ClaimWithdrawal(address string, amount sdk.Coin) error {
 	receiverAddress, err := sdk.AccAddressFromBech32(address)
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse receiver address: %s", address)
@@ -97,7 +98,7 @@ func (c *client) ClaimWithdrawal(address string, amount *big.Int) error {
 
 	fmt.Println(receiverAddress.String())
 
-	msg := odinminttypes.NewMsgWithdrawCoinsToAccFromTreasury(withdrawalAmount, receiverAddress, c.signer.address)
+	msg := odinmint.NewMsgWithdrawCoinsToAccFromTreasury(sdk.NewCoins(amount), receiverAddress, c.signer.address)
 	txBytes, err := c.signTx(&msg)
 	if err != nil {
 		return errors.Wrapf(err, "failed to sign the transaction to to claim withdrawal with message: %s", msg.String())
@@ -186,14 +187,14 @@ func (c *client) signTx(msg sdk.Msg) ([]byte, error) {
 }
 
 // GetAccount returns the odin account by given address
-func (c *client) GetAccount(address string) (sdkauthtypes.AccountI, error) {
-	authClient := sdkauthtypes.NewQueryClient(c.connection)
-	response, err := authClient.Account(c.context, &sdkauthtypes.QueryAccountRequest{Address: address})
+func (c *client) GetAccount(address string) (sdkauth.AccountI, error) {
+	authClient := sdkauth.NewQueryClient(c.connection)
+	response, err := authClient.Account(c.context, &sdkauth.QueryAccountRequest{Address: address})
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to query account")
 	}
 
-	var account sdkauthtypes.AccountI
+	var account sdkauth.AccountI
 	if err := encoding.Marshaler.UnpackAny(response.Account, &account); err != nil {
 		return nil, errors.Wrap(err, "failed to parse query response")
 	}
@@ -202,7 +203,15 @@ func (c *client) GetAccount(address string) (sdkauthtypes.AccountI, error) {
 }
 
 // GetExchangeRate returns rate of assets.
-func (c *client) GetExchangeRate(key string) (*big.Int, error) {
-	// TODO: implement logic
-	return big.NewInt(1), nil
+func (c *client) GetExchangeRate(from string) (sdk.Dec, error) {
+	coinswapClient := odincoinswap.NewQueryClient(c.connection)
+	response, err := coinswapClient.Rate(
+		c.context,
+		&odincoinswap.QueryRateRequest{From: from, To: c.config.OdinConfig().Denom},
+	)
+	if err != nil {
+		return sdk.Dec{}, errors.Wrap(err, "failed to query account")
+	}
+
+	return response.Rate, nil
 }

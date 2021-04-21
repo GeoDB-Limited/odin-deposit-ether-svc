@@ -5,6 +5,7 @@ import (
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
+	sdk "github.com/cosmos/cosmos-sdk/types"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -223,42 +224,68 @@ func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
 }
 
 // exchangeETH exchanges deposited ETH to odin tokens
-func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (*big.Int, error) {
+func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (sdk.Coin, error) {
 	rate, err := s.odin.GetExchangeRate(ETHExchangeSymbol)
 	if err != nil {
-		return &big.Int{}, errors.Wrap(err, "failed to get the exchange rate")
+		return sdk.Coin{}, errors.Wrap(err, "failed to get the exchange rate")
 	}
 
-	// TODO: implement exchange logic
-	withdrawalAmount := rate.Mul(rate, amount)
+	withdrawalAmount, err := s.exchange(amount, rate)
+	if err != nil {
+		return sdk.Coin{}, errors.Wrapf(
+			err,
+			"failed to exchange the deposit: %s with rate: %s",
+			amount.String(),
+			rate.String(),
+		)
+	}
 
 	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
 		"rate":              rate,
-		"withdrawal_amount": withdrawalAmount,
-	}).Info("Exchanged")
+		"withdrawal_amount": withdrawalAmount.Amount,
+	}).Info("Exchanged ETH")
 
 	return withdrawalAmount, nil
 }
 
 // exchangeERC20 exchanges deposited ERC20 to odin tokens
-func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int, tokenSymbol string) (*big.Int, error) {
+func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int, tokenSymbol string) (sdk.Coin, error) {
 	rate, err := s.odin.GetExchangeRate(tokenSymbol)
 	if err != nil {
-		return &big.Int{}, errors.Wrap(err, "failed to get the exchange rate")
+		return sdk.Coin{}, errors.Wrapf(err, "failed to get the exchange rate for %s", tokenSymbol)
 	}
 
-	// TODO: implement logic
-	withdrawalAmount := rate.Mul(rate, amount)
+	withdrawalAmount, err := s.exchange(amount, rate)
+	if err != nil {
+		return sdk.Coin{}, errors.Wrapf(
+			err,
+			"failed to exchange the deposit: %s with rate: %s",
+			amount.String(),
+			rate.String(),
+		)
+	}
 
 	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
 		"token_symbol":      tokenSymbol,
 		"rate":              rate,
-		"withdrawal_amount": withdrawalAmount,
-	}).Info("Exchanged")
+		"withdrawal_amount": withdrawalAmount.Amount,
+	}).Info("Exchanged ERC20")
+
+	return withdrawalAmount, nil
+}
+
+// exchange calculates new coin with the given exchange rate
+func (s *Service) exchange(amount *big.Int, rate sdk.Dec) (sdk.Coin, error) {
+	decAmount := sdk.NewDecFromBigInt(amount)
+	if rate.GT(decAmount) {
+		return sdk.Coin{}, errors.Errorf("current rate: %s is higher then amount provided: %s", rate.String(), amount.String())
+	}
+
+	withdrawalAmount := sdk.NewCoin(s.config.OdinConfig().Denom, decAmount.QuoRoundUp(rate).TruncateInt())
 
 	return withdrawalAmount, nil
 }
