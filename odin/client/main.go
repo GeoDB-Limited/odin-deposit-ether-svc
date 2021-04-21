@@ -108,7 +108,7 @@ func (c *client) ClaimWithdrawal(address string, amount sdk.Coin) error {
 	resp, err := serviceClient.BroadcastTx(
 		c.context,
 		&tx.BroadcastTxRequest{
-			Mode:    tx.BroadcastMode_BROADCAST_MODE_SYNC,
+			Mode:    tx.BroadcastMode_BROADCAST_MODE_BLOCK,
 			TxBytes: txBytes,
 		},
 	)
