@@ -9,8 +9,8 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"io/ioutil"
 	"math/big"
+	"os"
 )
 
 // Service defines a service that deploys a bridge contract.
@@ -96,7 +96,12 @@ func (s *Service) deployContract() (*common.Address, error) {
 
 // SetBridgeAddress sets an address of the bridge contract to the storage.
 func (s *Service) saveBridgeAddress(address common.Address) error {
-	if err := ioutil.WriteFile(s.config.BridgeAddressStorage(), address.Bytes(), 0777); err != nil {
+	f, err := os.OpenFile(s.config.BridgeAddressStorage(), os.O_WRONLY|os.O_CREATE, 0777)
+	if err != nil {
+		return errors.Wrap(err, "failed to add the address to the storage")
+	}
+
+	if _, err := f.WriteString(address.String()); err != nil {
 		return errors.Wrap(err, "failed to add the address to the storage")
 	}
 	return nil

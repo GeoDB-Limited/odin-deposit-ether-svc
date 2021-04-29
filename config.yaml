@@ -1,23 +1,23 @@
 log: info
 ethereum:
   chain:
-    endpoint: "ETHEREUM NETWORK ENDPOINT"
+    endpoint: "wss://ropsten.infura.io/ws/v3/d93dde4baecb4c0d9ddb0e8b4ca2fa9e"
     gas_limit: 3000000
     gas_price: 1000000000
   signer:
-    private_key: "ETHEREUM ACCOUNT PRIVATE KEY"
+    private_key: "444bec714882856cb695ddba7098862594ecafe69494d88c370deaab425cd6de"
 odin:
   chain:
-    endpoint: "ODIN NETWORK ENDPOINT"
-    chain_id: "ODIN"
-    denom: "loki"
+    endpoint: "35.195.150.105:9090"
+    chain_id: "odin"
+    denom: "odin"
     memo: ""
-    gas_price: 1
+    gas_price: 10
     gas_limit: 500000
   signer:
-    mnemonic: "MNEMONIC"
-  storage: "ADDRESS_STORAGE.txt"
+    mnemonic: "prize weapon virus foot mandate finger add strong world physical token castle knee bracket armed quit brand physical neglect film tip okay view broken"
+  bridge_address_storage: "./address.txt"
 deploy:
   supported_tokens:
-    - "SUPPORTED TOKEN ADDRESS"
-    - "ANOTHER ONE SUPPORTED TOKEN ADDRESS"
+    - "0xbde8bb00a7ef67007a96945b3a3621177b615c44" # Ropsten WBTC
+    - "0xc778417e063141139fce010982780140aa0cd5ab" # Ropsten WETH

@@ -70,6 +70,7 @@ func (s *Service) Run() {
 	withdrawals := make(chan WithdrawalDetails)
 	go s.subscribeETHTransfer(withdrawals)
 	go s.subscribeERC20Transfer(withdrawals)
+	s.logger.Info("Starting deposits processing service...")
 	s.processTransfer(withdrawals)
 }
 
