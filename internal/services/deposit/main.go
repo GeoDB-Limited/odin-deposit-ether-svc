@@ -15,7 +15,8 @@ import (
 )
 
 const (
-	ETHExchangeSymbol = "ETH" // used to get an exchange rate of ETH
+	ETHExchangeSymbol       = "ETH" // used to get an exchange rate of ETH
+	ETHPrecision      int64 = 18    // the precision of ETH
 
 	ETHDepositType = iota
 	ERC20DepositType
@@ -38,6 +39,7 @@ type WithdrawalDetails struct {
 	DepositAmount   *big.Int // amount of user's deposit
 	TokenAddress    common.Address
 	TokenSymbol     string
+	TokenPrecision  int64
 	DepositType     int
 }
 
@@ -101,7 +103,12 @@ func (s *Service) subscribeETHTransfer(withdrawals chan<- WithdrawalDetails) {
 // subscribeERC20Transfer subscribes on events of a bridge contract.
 func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 	logs := make(chan *generated.BridgeERC20Deposited)
-	subscription, err := s.contract.WatchERC20Deposited(&bind.WatchOpts{Context: s.context}, logs, []common.Address{}, []common.Address{})
+	subscription, err := s.contract.WatchERC20Deposited(
+		&bind.WatchOpts{Context: s.context},
+		logs,
+		[]common.Address{},
+		[]common.Address{},
+	)
 	if err != nil {
 		panic(errors.Wrap(err, "failed to subscribe on event logs"))
 	}
@@ -119,6 +126,7 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 			DepositAmount:   event.DepositAmount,
 			TokenAddress:    event.TokenAddress,
 			TokenSymbol:     event.Symbol,
+			TokenPrecision:  int64(event.TokenPrecision),
 			DepositType:     ERC20DepositType,
 		}
 	}
@@ -194,7 +202,12 @@ func (s *Service) processETHTransfer(withdrawal WithdrawalDetails) error {
 
 // processERC20Transfer exchanges ERC20 and claims withdrawal from odin mint module
 func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
-	withdrawalAmount, err := s.exchangeERC20(withdrawal.EthereumAddress, withdrawal.DepositAmount, withdrawal.TokenSymbol)
+	withdrawalAmount, err := s.exchangeERC20(
+		withdrawal.EthereumAddress,
+		withdrawal.DepositAmount,
+		withdrawal.TokenSymbol,
+		withdrawal.TokenPrecision,
+	)
 	if err != nil {
 		return errors.Wrapf(
 			err,
@@ -219,6 +232,8 @@ func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
 		"odin_address":     withdrawal.OdinAddress,
 		"amount":           withdrawal.DepositAmount,
 		"token_address":    withdrawal.TokenAddress,
+		"token_symbol":     withdrawal.TokenSymbol,
+		"token_precision":  withdrawal.TokenPrecision,
 	}).Info("User deposited ERC20")
 
 	return nil
@@ -231,7 +246,7 @@ func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (
 		return sdk.Coin{}, errors.Wrap(err, "failed to get the exchange rate")
 	}
 
-	withdrawalAmount, err := s.exchange(amount, rate)
+	withdrawalAmount, err := s.exchange(amount, rate, ETHPrecision)
 	if err != nil {
 		return sdk.Coin{}, errors.Wrapf(
 			err,
@@ -252,13 +267,18 @@ func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (
 }
 
 // exchangeERC20 exchanges deposited ERC20 to odin tokens
-func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int, tokenSymbol string) (sdk.Coin, error) {
+func (s *Service) exchangeERC20(
+	ethereumAddress common.Address,
+	amount *big.Int,
+	tokenSymbol string,
+	tokenPrecision int64,
+) (sdk.Coin, error) {
 	rate, err := s.odin.GetExchangeRate(tokenSymbol)
 	if err != nil {
 		return sdk.Coin{}, errors.Wrapf(err, "failed to get the exchange rate for %s", tokenSymbol)
 	}
 
-	withdrawalAmount, err := s.exchange(amount, rate)
+	withdrawalAmount, err := s.exchange(amount, rate, tokenPrecision)
 	if err != nil {
 		return sdk.Coin{}, errors.Wrapf(
 			err,
@@ -272,6 +292,7 @@ func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int,
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
 		"token_symbol":      tokenSymbol,
+		"token_precision":   tokenPrecision,
 		"rate":              rate,
 		"withdrawal_amount": withdrawalAmount.Amount,
 	}).Info("Exchanged ERC20")
@@ -280,15 +301,10 @@ func (s *Service) exchangeERC20(ethereumAddress common.Address, amount *big.Int,
 }
 
 // exchange calculates new coin with the given exchange rate
-func (s *Service) exchange(amount *big.Int, rate sdk.Dec) (sdk.Coin, error) {
-	decAmount := sdk.NewDecFromBigInt(amount)
-	if rate.GT(decAmount) {
-		return sdk.Coin{}, errors.Errorf("current rate: %s is higher then amount provided: %s", rate.String(), amount.String())
-	}
-
-	withdrawalAmount := sdk.NewCoin(s.config.OdinConfig().Denom, decAmount.QuoRoundUp(rate).TruncateInt())
-
-	return withdrawalAmount, nil
+func (s *Service) exchange(amount *big.Int, rate sdk.Dec, tokenPrecision int64) (sdk.Coin, error) {
+	precision := new(big.Int).Exp(big.NewInt(10), big.NewInt(s.config.OdinConfig().Precision-tokenPrecision), nil)
+	withdrawalAmount := sdk.NewDecFromBigInt(amount).Mul(sdk.NewDecFromBigInt(precision)).Mul(rate)
+	return sdk.NewCoin(s.config.OdinConfig().Denom, withdrawalAmount.TruncateInt()), nil
 }
 
 // payBackETH pays back the deposit amount

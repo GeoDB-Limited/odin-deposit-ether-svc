@@ -25,7 +25,8 @@ contract Bridge is Ownable {
         string _odinAddress,
         uint256 _depositAmount,
         address indexed _tokenAddress,
-        string symbol
+        string _symbol,
+        uint8 _tokenPrecision
     );
     event TokenAdded(address indexed _tokenAddress);
     event TokenRemoved(address indexed _tokenAddress);
@@ -83,7 +84,7 @@ contract Bridge is Ownable {
         bool _success = _token.transferFrom(msg.sender, address(this), _depositAmount);
         require(_success, "Failed to transfer tokens.");
 
-        emit ERC20Deposited(msg.sender, _odinAddress, _depositAmount, _tokenAddress, _token.symbol());
+        emit ERC20Deposited(msg.sender, _odinAddress, _depositAmount, _tokenAddress, _token.symbol(), _token.decimals());
         return true;
     }
 
