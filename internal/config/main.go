@@ -55,12 +55,13 @@ type OdinSignerConfig struct {
 
 // OdinChainConfig defines configs for Odin chain
 type OdinChainConfig struct {
-	Endpoint string   `yaml:"endpoint"`
-	ChainId  string   `yaml:"chain_id"`
-	Denom    string   `yaml:"denom"`
-	Memo     string   `yaml:"memo"`
-	GasPrice *big.Int `yaml:"gas_price"`
-	GasLimit *big.Int `yaml:"gas_limit"`
+	Endpoint  string   `yaml:"endpoint"`
+	ChainId   string   `yaml:"chain_id"`
+	Denom     string   `yaml:"denom"`
+	Precision int64    `yaml:"precision"`
+	Memo      string   `yaml:"memo"`
+	GasPrice  *big.Int `yaml:"gas_price"`
+	GasLimit  *big.Int `yaml:"gas_limit"`
 }
 
 // EthereumConfig defines the configurations of ethereum client.

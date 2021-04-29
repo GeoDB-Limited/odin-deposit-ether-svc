@@ -2,7 +2,6 @@ package client
 
 import (
 	"context"
-	"fmt"
 	app "github.com/GeoDB-Limited/odin-core/app"
 	odinapp "github.com/GeoDB-Limited/odin-core/app"
 	odincoinswap "github.com/GeoDB-Limited/odin-core/x/coinswap/types"
@@ -95,8 +94,6 @@ func (c *client) ClaimWithdrawal(address string, amount sdk.Coin) error {
 	if err != nil {
 		return errors.Wrapf(err, "failed to parse receiver address: %s", address)
 	}
-
-	fmt.Println(receiverAddress.String())
 
 	msg := odinmint.NewMsgWithdrawCoinsToAccFromTreasury(sdk.NewCoins(amount), receiverAddress, c.signer.address)
 	txBytes, err := c.signTx(&msg)
