@@ -303,7 +303,7 @@ func (s *Service) exchangeERC20(
 // exchange calculates new coin with the given exchange rate
 func (s *Service) exchange(amount *big.Int, rate sdk.Dec, tokenPrecision int64) (sdk.Coin, error) {
 	precision := new(big.Int).Exp(big.NewInt(10), big.NewInt(s.config.OdinConfig().Precision-tokenPrecision), nil)
-	withdrawalAmount := sdk.NewDecFromBigInt(amount).Mul(sdk.NewDecFromBigInt(precision)).Mul(rate)
+	withdrawalAmount := sdk.NewDecFromBigIntWithPrec(amount, precision.Int64()).Mul(rate)
 	return sdk.NewCoin(s.config.OdinConfig().Denom, withdrawalAmount.TruncateInt()), nil
 }
 
