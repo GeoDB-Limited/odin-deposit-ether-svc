@@ -10,13 +10,15 @@ odin:
   chain:
     endpoint: "ODIN NETWORK ENDPOINT"
     chain_id: "ODIN"
-    denom: "loki"
+    denom: "odin"
+    precision: 18
     memo: ""
-    gas_price: 1
+    gas_price: 10
     gas_limit: 500000
   signer:
     mnemonic: "MNEMONIC"
-  storage: "ADDRESS_STORAGE.txt"
+    password: ""
+  bridge_address_storage: "ADDRESS_STORAGE.txt"
 deploy:
   supported_tokens:
     - "SUPPORTED TOKEN ADDRESS"
