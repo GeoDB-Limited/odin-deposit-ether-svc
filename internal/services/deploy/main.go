@@ -68,13 +68,7 @@ func (s *Service) deployContract() (*common.Address, error) {
 
 	ethConfig := s.config.EthereumConfig()
 	txOpts.GasLimit = ethConfig.GasLimit.Uint64()
-
-	gasPrice, err := s.ethereum.SuggestGasPrice(s.context)
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to suggest gas price")
-	}
-
-	txOpts.GasPrice = gasPrice
+	txOpts.GasPrice = ethConfig.GasPrice
 
 	contractAddress, tx, _, err := generated.DeployBridge(
 		txOpts,
