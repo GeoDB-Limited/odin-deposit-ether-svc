@@ -3,7 +3,7 @@ ethereum:
   chain:
     endpoint: "ETHEREUM NETWORK ENDPOINT"
     gas_limit: 3000000
-    gas_price: 1000000000
+    gas_price: 10000
   signer:
     private_key: "ETHEREUM ACCOUNT PRIVATE KEY"
 odin:
