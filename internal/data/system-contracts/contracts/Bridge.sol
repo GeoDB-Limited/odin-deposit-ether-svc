@@ -153,4 +153,27 @@ contract Bridge is Ownable {
 
         return true;
     }
+
+    /**
+    * @notice Transfers contract ETH funds to owner
+    * @param _amount Claimable amount
+    * @return True if everything went well
+    */
+    function claimETH(uint256 _amount) external onlyOwner returns (bool) {
+        (bool _success,) = payable(msg.sender).call{value : _amount}("");
+        require(_success, "Failed to claim contract ETH funds.");
+        return true;
+    }
+
+    /**
+    * @notice Transfers contract ERC20 funds to owner
+    * @param _amount Claimable amount
+    * @param _token Claimable token address
+    * @return True if everything went well
+    */
+    function claimERC20(uint256 _amount, address _token) external onlyOwner returns (bool) {
+        bool _success = IERC20Token(_token).transfer(msg.sender, _amount);
+        require(_success, "Failed to claim contract ERC20 funds.");
+        return true;
+    }
 }
