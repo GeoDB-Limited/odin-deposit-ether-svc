@@ -285,7 +285,7 @@ contract Bridge is Ownable {
     * @notice Requires allowance to deposit
     */
     modifier onlyDepositingAllowed() {
-        require(depositingAllowed, "It is not allowed to deposit");
+        require(depositingAllowed, "It is not allowed to deposit.");
         _;
     }
 
@@ -293,7 +293,7 @@ contract Bridge is Ownable {
     * @notice Requires allowance to claim locked funds
     */
     modifier onlyClaimingLockedFundsAllowed() {
-        require(claimingLockedFundsAllowed, "It is not allowed to claim locked funds");
+        require(claimingLockedFundsAllowed, "It is not allowed to claim locked funds.");
         _;
     }
 }
