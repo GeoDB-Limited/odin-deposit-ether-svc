@@ -70,11 +70,15 @@ func (s *Service) deployContract() (*common.Address, error) {
 	txOpts.GasLimit = ethConfig.GasLimit.Uint64()
 	txOpts.GasPrice = ethConfig.GasPrice
 
+	deployConfig := s.config.DeployConfig()
+
 	contractAddress, tx, _, err := generated.DeployBridge(
 		txOpts,
 		s.ethereum,
-		s.config.DeployConfig().SupportedTokens,
+		deployConfig.SupportedTokens,
 		s.config.DepositCompensation(),
+		deployConfig.LockingFundsAllowed,
+		deployConfig.ClaimingLockedFundsAllowed,
 	)
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to submit contract tx")

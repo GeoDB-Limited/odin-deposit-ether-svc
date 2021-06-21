@@ -19,6 +19,8 @@ odin:
     password: ""
   bridge_address_storage: "ADDRESS_STORAGE.txt"
 deploy:
+  locking_funds_allowed: true
+  claiming_locked_funds_allowed: false
   supported_tokens:
     - "SUPPORTED TOKEN ADDRESS"
     - "ANOTHER ONE SUPPORTED TOKEN ADDRESS"

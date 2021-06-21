@@ -83,7 +83,9 @@ type EthereumChainConfig struct {
 
 // DeployConfig defines the configurations of Deploy service.
 type DeployConfig struct {
-	SupportedTokens []common.Address `yaml:"supported_tokens"`
+	LockingFundsAllowed        bool             `yaml:"locking_funds_allowed"`
+	ClaimingLockedFundsAllowed bool             `yaml:"claiming_locked_funds_allowed"`
+	SupportedTokens            []common.Address `yaml:"supported_tokens"`
 }
 
 // NewConfig returns global service configurations.

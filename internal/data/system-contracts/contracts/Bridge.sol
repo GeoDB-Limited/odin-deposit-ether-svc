@@ -15,6 +15,11 @@ contract Bridge is Ownable {
     mapping(address => bool) public compensationDeposited;
     mapping(address => bool) public supportedTokens;
 
+    bool claimingLockedFundsAllowed;
+    bool lockingFundsAllowed;
+    mapping(address => uint256) public lockedETH;
+    mapping(address => mapping(address => uint256)) public lockedERC20;
+
     event ETHDeposited(
         address indexed _userAddress,
         string _odinAddress,
@@ -31,12 +36,19 @@ contract Bridge is Ownable {
     event TokenAdded(address indexed _tokenAddress);
     event TokenRemoved(address indexed _tokenAddress);
 
-    constructor(address[] memory _supportedTokens, uint256 _depositCompensation) {
+    constructor(
+        address[] memory _supportedTokens,
+        uint256 _depositCompensation,
+        bool _allowanceToLockFunds,
+        bool _allowanceToClaimLockedFunds
+    ) {
         for (uint256 i = 0; i < _supportedTokens.length; i++) {
             supportedTokens[_supportedTokens[i]] = true;
         }
 
         depositCompensation = _depositCompensation;
+        lockingFundsAllowed = _allowanceToLockFunds;
+        claimingLockedFundsAllowed = _allowanceToClaimLockedFunds;
     }
 
     /**
@@ -56,6 +68,10 @@ contract Bridge is Ownable {
         }
 
         require(_depositAmount > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
+
+        if (lockingFundsAllowed) {
+            lockedETH[msg.sender] = lockedETH[msg.sender].add(_depositAmount);
+        }
 
         emit ETHDeposited(msg.sender, _odinAddress, _depositAmount);
         return true;
@@ -83,6 +99,10 @@ contract Bridge is Ownable {
 
         bool _success = _token.transferFrom(msg.sender, address(this), _depositAmount);
         require(_success, "Failed to transfer tokens.");
+
+        if (lockingFundsAllowed) {
+            lockedERC20[msg.sender][_tokenAddress] = lockedERC20[msg.sender][_tokenAddress].add(_depositAmount);
+        }
 
         emit ERC20Deposited(msg.sender, _odinAddress, _depositAmount, _tokenAddress, _token.symbol(), _token.decimals());
         return true;
@@ -112,11 +132,11 @@ contract Bridge is Ownable {
 
     /**
     * @notice Sets a new compensation amount for paying back
-    * @param _amount Amount of compensation
+    * @param _compensationAmount Amount of compensation
     * @return True if everything went well
     */
-    function setDepositCompensation(uint256 _amount) external onlyOwner returns (bool) {
-        depositCompensation = _amount;
+    function setDepositCompensation(uint256 _compensationAmount) external onlyOwner returns (bool) {
+        depositCompensation = _compensationAmount;
         return true;
     }
 
@@ -140,11 +160,12 @@ contract Bridge is Ownable {
     /**
     * @notice Transfers the amount of the deposit if an error occurred during the deposit
     * @param _user Depositor
+    * @param _tokenAddress Token address
     * @param _amount Deposit amount
     * @return True if everything went well
     */
-    function payBackERC20(address _user, address _token, uint256 _amount) external onlyOwner returns (bool) {
-        bool _success = IERC20Token(_token).transfer(_user, _amount);
+    function payBackERC20(address _user, address _tokenAddress, uint256 _amount) external onlyOwner returns (bool) {
+        bool _success = IERC20Token(_tokenAddress).transfer(_user, _amount);
         require(_success, "Failed to pay back");
 
         (_success,) = payable(msg.sender).call{value : depositCompensation}("");
@@ -155,25 +176,100 @@ contract Bridge is Ownable {
     }
 
     /**
-    * @notice Transfers contract ETH funds to owner
-    * @param _amount Claimable amount
+    * @notice Transfers locked ETH to msg sender
+    * @param _claimableAmount Claimable amount
     * @return True if everything went well
     */
-    function claimETH(uint256 _amount) external onlyOwner returns (bool) {
-        (bool _success,) = payable(msg.sender).call{value : _amount}("");
-        require(_success, "Failed to claim contract ETH funds.");
+    function claimLockedETH(uint256 _claimableAmount) external onlyClaimingLockedFundsAllowed returns (bool) {
+        uint256 _lockedAmount = lockedETH[msg.sender];
+        require(
+            _claimableAmount <= _lockedAmount,
+            "Insufficient locked ETH."
+        );
+
+        (bool _success,) = payable(msg.sender).call{value : _claimableAmount}("");
+        require(_success, "Failed to transfer claimed ETH.");
+
+        lockedETH[msg.sender] = _lockedAmount.sub(_claimableAmount);
+
         return true;
     }
 
     /**
-    * @notice Transfers contract ERC20 funds to owner
-    * @param _amount Claimable amount
-    * @param _token Claimable token address
+    * @notice Transfers locked ERC20 to msg sender
+    * @param _claimableAmount Claimable amount
+    * @param _tokenAddress Claimable token address
     * @return True if everything went well
     */
-    function claimERC20(uint256 _amount, address _token) external onlyOwner returns (bool) {
-        bool _success = IERC20Token(_token).transfer(msg.sender, _amount);
-        require(_success, "Failed to claim contract ERC20 funds.");
+    function claimLockedERC20(uint256 _claimableAmount, address _tokenAddress)
+    external onlyClaimingLockedFundsAllowed returns (bool)
+    {
+        uint256 _lockedAmount = lockedERC20[msg.sender][_tokenAddress];
+        require(
+            _claimableAmount <= _lockedAmount,
+            "Insufficient locked ERC20."
+        );
+
+        bool _success = IERC20Token(_tokenAddress).transfer(msg.sender, _claimableAmount);
+        require(_success, "Failed to transfer locked ERC20.");
+
+        lockedERC20[msg.sender][_tokenAddress] = _lockedAmount.sub(_claimableAmount);
+
         return true;
+    }
+
+    /**
+    * @notice Switches allowance to lock deposit assets
+    * @param _allowed If it is allowed to lock deposit assets
+    * @return True if everything went well
+    */
+    function setAllowanceToLock(bool _allowed) external onlyOwner returns (bool) {
+        lockingFundsAllowed = _allowed;
+
+        return true;
+    }
+
+    /**
+    * @notice Switches allowance to claim locked funds
+    * @param _allowed If it is allowed to claim locked funds
+    * @return True if everything went well
+    */
+    function setAllowanceToClaimLockedFunds(bool _allowed) external onlyOwner returns (bool) {
+        claimingLockedFundsAllowed = _allowed;
+
+        return true;
+    }
+
+    /**
+    * @notice Transfers contract ETH to contract owner
+    * @param _claimableAmount Claimable amount
+    * @return True if everything went well
+    */
+    function claimContractETH(uint256 _claimableAmount) external onlyOwner returns (bool) {
+        (bool _success,) = payable(msg.sender).call{value : _claimableAmount}("");
+        require(_success, "Failed to transfer claimed amount.");
+
+        return true;
+    }
+
+    /**
+    * @notice Transfers contract ERC20 to contract owner
+    * @param _claimableAmount Claimable amount
+    * @param _tokenAddress Claimable token address
+    * @return True if everything went well
+    */
+    function claimContractERC20(uint256 _claimableAmount, address _tokenAddress) external onlyOwner returns (bool) {
+        bool _success = IERC20Token(_tokenAddress).transfer(msg.sender, _claimableAmount);
+        require(_success, "Failed to transfer claimed amount.");
+
+        return true;
+    }
+
+    /**
+    * @notice Restricts only if it is allowed to claim locked funds
+    */
+    modifier onlyClaimingLockedFundsAllowed() {
+        require(claimingLockedFundsAllowed, "It is not allowed to claim locked funds");
+        _;
     }
 }
