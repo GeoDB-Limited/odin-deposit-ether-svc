@@ -77,6 +77,7 @@ func (s *Service) deployContract() (*common.Address, error) {
 		s.ethereum,
 		deployConfig.SupportedTokens,
 		deployConfig.RefundFee,
+		deployConfig.DepositingAllowed,
 		deployConfig.LockingFundsAllowed,
 		deployConfig.ClaimingLockedFundsAllowed,
 	)

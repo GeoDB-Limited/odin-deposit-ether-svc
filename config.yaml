@@ -20,6 +20,7 @@ odin:
   bridge_address_storage: "ADDRESS_STORAGE.txt"
 deploy:
   refund_fee: 30000000000 # 3000000 [gas_limit] * 10000 [gas_price]
+  depositing_allowed: true
   locking_funds_allowed: true
   claiming_locked_funds_allowed: false
   supported_tokens:

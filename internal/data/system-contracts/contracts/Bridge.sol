@@ -11,14 +11,17 @@ contract Bridge is Ownable {
     using SafeMath for uint256;
     using Address for address;
 
-    uint256 public depositCompensation;
-    mapping(address => bool) public compensationDeposited;
-    mapping(address => bool) public supportedTokens;
-
-    bool claimingLockedFundsAllowed;
+    uint256 public refundFee;
+    bool depositingAllowed;
     bool lockingFundsAllowed;
+    bool claimingLockedFundsAllowed;
+
+
     mapping(address => uint256) public lockedETH;
     mapping(address => mapping(address => uint256)) public lockedERC20;
+    mapping(address => bool) public refundFeeDeposited;
+    mapping(address => bool) public supportedTokens;
+
 
     event ETHDeposited(
         address indexed _userAddress,
@@ -38,17 +41,19 @@ contract Bridge is Ownable {
 
     constructor(
         address[] memory _supportedTokens,
-        uint256 _depositCompensation,
-        bool _allowanceToLockFunds,
-        bool _allowanceToClaimLockedFunds
+        uint256 _refundFee,
+        bool _depositingAllowed,
+        bool _lockingFundsAllowed,
+        bool _claimingLockedFundsAllowed
     ) {
         for (uint256 i = 0; i < _supportedTokens.length; i++) {
             supportedTokens[_supportedTokens[i]] = true;
         }
 
-        depositCompensation = _depositCompensation;
-        lockingFundsAllowed = _allowanceToLockFunds;
-        claimingLockedFundsAllowed = _allowanceToClaimLockedFunds;
+        refundFee = _refundFee;
+        depositingAllowed = _depositingAllowed;
+        lockingFundsAllowed = _lockingFundsAllowed;
+        claimingLockedFundsAllowed = _claimingLockedFundsAllowed;
     }
 
     /**
@@ -56,14 +61,14 @@ contract Bridge is Ownable {
     * @param _odinAddress Address in the Odin chain
     * @return True if everything went well
     */
-    function depositETH(string memory _odinAddress) external payable returns (bool) {
+    function depositETH(string memory _odinAddress) external onlyDepositingAllowed payable returns (bool) {
         uint256 _depositAmount = msg.value;
 
-        if (!compensationDeposited[msg.sender]) {
-            uint256 _depositCompensation = depositCompensation;
+        if (!refundFeeDeposited[msg.sender]) {
+            uint256 _depositCompensation = refundFee;
             require(_depositAmount >= _depositCompensation, "Insufficient funds to deposit compensation");
 
-            compensationDeposited[msg.sender] = true;
+            refundFeeDeposited[msg.sender] = true;
             _depositAmount = _depositAmount.sub(_depositCompensation);
         }
 
@@ -85,14 +90,14 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function depositERC20(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
-    external payable returns (bool)
+    external onlyDepositingAllowed payable returns (bool)
     {
         require(_tokenAddress.isContract(), "Given token is not a contract");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
 
-        if (!compensationDeposited[msg.sender]) {
-            require(msg.value >= depositCompensation, "Insufficient funds for deposit compensation");
-            compensationDeposited[msg.sender] = true;
+        if (!refundFeeDeposited[msg.sender]) {
+            require(msg.value >= refundFee, "Insufficient funds for deposit compensation");
+            refundFeeDeposited[msg.sender] = true;
         }
 
         IERC20Token _token = IERC20Token(_tokenAddress);
@@ -132,11 +137,11 @@ contract Bridge is Ownable {
 
     /**
     * @notice Sets a new compensation amount for paying back
-    * @param _compensationAmount Amount of compensation
+    * @param _refundFee Amount of refund fee
     * @return True if everything went well
     */
-    function setDepositCompensation(uint256 _compensationAmount) external onlyOwner returns (bool) {
-        depositCompensation = _compensationAmount;
+    function setRefundFee(uint256 _refundFee) external onlyOwner returns (bool) {
+        refundFee = _refundFee;
         return true;
     }
 
@@ -150,9 +155,9 @@ contract Bridge is Ownable {
         (bool _success,) = payable(_user).call{value : _amount}("");
         require(_success, "Failed to pay back the deposit amount.");
 
-        (_success,) = payable(msg.sender).call{value : depositCompensation}("");
+        (_success,) = payable(msg.sender).call{value : refundFee}("");
         require(_success, "Failed to pay the compensation for paying back.");
-        compensationDeposited[_user] = false;
+        refundFeeDeposited[_user] = false;
 
         return true;
     }
@@ -168,9 +173,9 @@ contract Bridge is Ownable {
         bool _success = IERC20Token(_tokenAddress).transfer(_user, _amount);
         require(_success, "Failed to pay back");
 
-        (_success,) = payable(msg.sender).call{value : depositCompensation}("");
+        (_success,) = payable(msg.sender).call{value : refundFee}("");
         require(_success, "Failed to pay the compensation for paying back.");
-        compensationDeposited[_user] = false;
+        refundFeeDeposited[_user] = false;
 
         return true;
     }
@@ -219,7 +224,7 @@ contract Bridge is Ownable {
     }
 
     /**
-    * @notice Switches allowance to lock deposit assets
+    * @notice Sets allowance to lock deposit assets
     * @param _allowed If it is allowed to lock deposit assets
     * @return True if everything went well
     */
@@ -230,12 +235,23 @@ contract Bridge is Ownable {
     }
 
     /**
-    * @notice Switches allowance to claim locked funds
+    * @notice Sets allowance to claim locked funds
     * @param _allowed If it is allowed to claim locked funds
     * @return True if everything went well
     */
     function setAllowanceToClaimLockedFunds(bool _allowed) external onlyOwner returns (bool) {
         claimingLockedFundsAllowed = _allowed;
+
+        return true;
+    }
+
+    /**
+    * @notice Sets allowance to deposit
+    * @param _allowed If it is allowed to deposit
+    * @return True if everything went well
+    */
+    function setAllowanceToDeposit(bool _allowed) external onlyOwner returns (bool) {
+        depositingAllowed = _allowed;
 
         return true;
     }
@@ -266,7 +282,15 @@ contract Bridge is Ownable {
     }
 
     /**
-    * @notice Restricts only if it is allowed to claim locked funds
+    * @notice Requires allowance to deposit
+    */
+    modifier onlyDepositingAllowed() {
+        require(depositingAllowed, "It is not allowed to deposit");
+        _;
+    }
+
+    /**
+    * @notice Requires allowance to claim locked funds
     */
     modifier onlyClaimingLockedFundsAllowed() {
         require(claimingLockedFundsAllowed, "It is not allowed to claim locked funds");
