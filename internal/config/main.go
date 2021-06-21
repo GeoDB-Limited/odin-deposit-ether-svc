@@ -27,7 +27,6 @@ type Config interface {
 	EthereumSigner() (common.Address, *ecdsa.PrivateKey)
 	OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey)
 
-	DepositCompensation() *big.Int
 	BridgeAddressStorage() string
 }
 
@@ -83,6 +82,7 @@ type EthereumChainConfig struct {
 
 // DeployConfig defines the configurations of Deploy service.
 type DeployConfig struct {
+	RefundFee                  *big.Int         `yaml:"refund_fee"`
 	LockingFundsAllowed        bool             `yaml:"locking_funds_allowed"`
 	ClaimingLockedFundsAllowed bool             `yaml:"claiming_locked_funds_allowed"`
 	SupportedTokens            []common.Address `yaml:"supported_tokens"`
@@ -175,11 +175,6 @@ func (c *config) OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey) {
 	accAddress := sdk.AccAddress(pk.PubKey().Address())
 
 	return accAddress, &pk
-}
-
-// DepositCompensation calculates the deposit compensation from transaction params.
-func (c *config) DepositCompensation() *big.Int {
-	return c.Ethereum.Chain.GasPrice.Mul(c.Ethereum.Chain.GasPrice, c.Ethereum.Chain.GasLimit)
 }
 
 // BridgeAddressStorage returns the path to bridge address storage.
