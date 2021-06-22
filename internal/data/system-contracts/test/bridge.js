@@ -14,11 +14,11 @@ contract('Bridge.sol', (accounts) => {
 
     const reverter = new Reverter(web3);
     const ODIN_ADDRESS = 'odin';
-    const REFUND_FEE = bn(10);
+    const REFUND_GAS_LIMIT = bn(1000000);
 
     before(async () => {
         weth = await WETH.new('WETH', 'WETH', {from: OWNER});
-        bridge = await Bridge.new([weth.address], REFUND_FEE, true, true, false, {from: OWNER});
+        bridge = await Bridge.new([weth.address], REFUND_GAS_LIMIT, true, true, false, {from: OWNER});
 
         await weth.transfer(USER, bn('10000000000000'), {from: OWNER});
 
@@ -36,7 +36,7 @@ contract('Bridge.sol', (accounts) => {
             assert.equal(result.logs[0].event, 'ETHDeposited');
             assert.equal(result.logs[0].args._userAddress, USER);
             assert.equal(result.logs[0].args._odinAddress, ODIN_ADDRESS);
-            assert.equal(result.logs[0].args._depositAmount.toString(), depositAmount.sub(REFUND_FEE).toString());
+            assert.equal(result.logs[0].args._depositAmount.toString(), depositAmount.toString());
         });
     });
 
@@ -48,7 +48,7 @@ contract('Bridge.sol', (accounts) => {
                 weth.address,
                 ODIN_ADDRESS,
                 depositAmount,
-                {from: USER, value: REFUND_FEE}
+                {from: USER}
             );
 
             assert.equal(result.logs.length, 1);
@@ -65,7 +65,7 @@ contract('Bridge.sol', (accounts) => {
             const depositAmount = bn('10000000');
             await bridge.depositETH(ODIN_ADDRESS, {from: USER, value: depositAmount});
             await truffleAssert.reverts(
-                bridge.claimLockedETH(depositAmount.sub(REFUND_FEE), {from: USER}),
+                bridge.claimLockedETH(depositAmount, {from: USER}),
                 'It is not allowed to claim locked funds.'
             );
         });
@@ -86,13 +86,13 @@ contract('Bridge.sol', (accounts) => {
                 userBalanceAfterDeposit.add(depositAmount).add(txFee).toString(),
             );
 
-            result = await bridge.claimLockedETH(depositAmount.sub(REFUND_FEE), {from: USER});
+            result = await bridge.claimLockedETH(depositAmount, {from: USER});
             txFee = await calculateTxPrice(result)
 
             const userBalanceAfterClaim = bn(await web3.eth.getBalance(USER));
             assert.equal(
                 userBalanceAfterClaim.toString(),
-                userBalanceAfterDeposit.add(depositAmount).sub(REFUND_FEE).sub(txFee).toString(),
+                userBalanceAfterDeposit.add(depositAmount).sub(txFee).toString(),
             );
         });
     });
@@ -105,7 +105,7 @@ contract('Bridge.sol', (accounts) => {
                 weth.address,
                 ODIN_ADDRESS,
                 depositAmount,
-                {from: USER, value: REFUND_FEE}
+                {from: USER}
             );
             await truffleAssert.reverts(
                 bridge.claimLockedERC20(depositAmount, weth.address, {from: USER}),
@@ -123,7 +123,7 @@ contract('Bridge.sol', (accounts) => {
                 weth.address,
                 ODIN_ADDRESS,
                 depositAmount,
-                {from: USER, value: REFUND_FEE}
+                {from: USER}
             );
 
             const userBalanceAfterDeposit = await weth.balanceOf(USER);
@@ -149,7 +149,7 @@ contract('Bridge.sol', (accounts) => {
             await bridge.depositETH(ODIN_ADDRESS, {from: USER, value: depositAmount});
 
             await truffleAssert.reverts(
-                bridge.claimContractETH(depositAmount.sub(REFUND_FEE), {from: USER}),
+                bridge.claimContractETH(depositAmount, {from: USER}),
                 'Ownable: caller is not the owner.',
             );
         });
@@ -159,13 +159,13 @@ contract('Bridge.sol', (accounts) => {
             await bridge.depositETH(ODIN_ADDRESS, {from: USER, value: depositAmount});
 
             const ownerBalanceBeforeClaim = bn(await web3.eth.getBalance(OWNER));
-            const result = await bridge.claimContractETH(depositAmount.sub(REFUND_FEE), {from: OWNER});
+            const result = await bridge.claimContractETH(depositAmount, {from: OWNER});
             const txFee = await calculateTxPrice(result);
 
             const ownerBalanceAfterClaim = bn(await web3.eth.getBalance(OWNER));
             assert.equal(
                 ownerBalanceAfterClaim.toString(),
-                ownerBalanceBeforeClaim.add(depositAmount).sub(txFee).sub(REFUND_FEE).toString(),
+                ownerBalanceBeforeClaim.add(depositAmount).sub(txFee).toString(),
             );
         });
     });
@@ -178,7 +178,7 @@ contract('Bridge.sol', (accounts) => {
                 weth.address,
                 ODIN_ADDRESS,
                 depositAmount,
-                {from: USER, value: REFUND_FEE}
+                {from: USER}
             );
 
 
@@ -195,7 +195,7 @@ contract('Bridge.sol', (accounts) => {
                 weth.address,
                 ODIN_ADDRESS,
                 depositAmount,
-                {from: USER, value: REFUND_FEE}
+                {from: USER}
             );
 
             const ownerBalanceBeforeClaim = bn(await weth.balanceOf(OWNER));

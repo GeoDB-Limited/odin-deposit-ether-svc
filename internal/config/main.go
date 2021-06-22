@@ -82,7 +82,7 @@ type EthereumChainConfig struct {
 
 // DeployConfig defines the configurations of Deploy service.
 type DeployConfig struct {
-	RefundFee                  *big.Int         `yaml:"refund_fee"`
+	RefundGasLimit             *big.Int         `yaml:"refund_gas_limit"`
 	DepositingAllowed          bool             `yaml:"depositing_allowed"`
 	LockingFundsAllowed        bool             `yaml:"locking_funds_allowed"`
 	ClaimingLockedFundsAllowed bool             `yaml:"claiming_locked_funds_allowed"`

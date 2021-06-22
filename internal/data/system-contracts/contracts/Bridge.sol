@@ -11,17 +11,23 @@ contract Bridge is Ownable {
     using SafeMath for uint256;
     using Address for address;
 
-    uint256 public refundFee;
+    struct Refund {
+        uint256 gasPrice;
+        uint256 amount;
+    }
+
+    uint256 public refundGas;
     bool depositingAllowed;
     bool lockingFundsAllowed;
     bool claimingLockedFundsAllowed;
 
+    mapping(address => bool) public supportedTokens;
+
+    mapping(address => Refund) public refundETH;
+    mapping(address => mapping(address => Refund)) public refundERC20;
 
     mapping(address => uint256) public lockedETH;
     mapping(address => mapping(address => uint256)) public lockedERC20;
-    mapping(address => bool) public refundFeeDeposited;
-    mapping(address => bool) public supportedTokens;
-
 
     event ETHDeposited(
         address indexed _userAddress,
@@ -38,10 +44,14 @@ contract Bridge is Ownable {
     );
     event TokenAdded(address indexed _tokenAddress);
     event TokenRemoved(address indexed _tokenAddress);
+    event RefundETHSet(address indexed _userAddress, uint256 _refundAmount);
+    event RefundERC20Set(address indexed _userAddress, address indexed _tokenAddress, uint256 _refundAmount);
+    event RefundETHClaimed(address indexed _userAddress, uint256 _refundAmount);
+    event RefundERC20Claimed(address indexed _userAddress, address indexed _tokenAddress, uint256 _refundAmount);
 
     constructor(
         address[] memory _supportedTokens,
-        uint256 _refundFee,
+        uint256 _refundGasLimit,
         bool _depositingAllowed,
         bool _lockingFundsAllowed,
         bool _claimingLockedFundsAllowed
@@ -50,7 +60,7 @@ contract Bridge is Ownable {
             supportedTokens[_supportedTokens[i]] = true;
         }
 
-        refundFee = _refundFee;
+        refundGas = _refundGasLimit;
         depositingAllowed = _depositingAllowed;
         lockingFundsAllowed = _lockingFundsAllowed;
         claimingLockedFundsAllowed = _claimingLockedFundsAllowed;
@@ -62,23 +72,13 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function depositETH(string memory _odinAddress) external onlyDepositingAllowed payable returns (bool) {
-        uint256 _depositAmount = msg.value;
-
-        if (!refundFeeDeposited[msg.sender]) {
-            uint256 _depositCompensation = refundFee;
-            require(_depositAmount >= _depositCompensation, "Insufficient funds to deposit compensation");
-
-            refundFeeDeposited[msg.sender] = true;
-            _depositAmount = _depositAmount.sub(_depositCompensation);
-        }
-
-        require(_depositAmount > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
+        require(msg.value > 0, "Invalid value for the deposit amount, failed to deposit a zero value.");
 
         if (lockingFundsAllowed) {
-            lockedETH[msg.sender] = lockedETH[msg.sender].add(_depositAmount);
+            lockedETH[msg.sender] = lockedETH[msg.sender].add(msg.value);
         }
 
-        emit ETHDeposited(msg.sender, _odinAddress, _depositAmount);
+        emit ETHDeposited(msg.sender, _odinAddress, msg.value);
         return true;
     }
 
@@ -94,11 +94,6 @@ contract Bridge is Ownable {
     {
         require(_tokenAddress.isContract(), "Given token is not a contract");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
-
-        if (!refundFeeDeposited[msg.sender]) {
-            require(msg.value >= refundFee, "Insufficient funds for deposit compensation");
-            refundFeeDeposited[msg.sender] = true;
-        }
 
         IERC20Token _token = IERC20Token(_tokenAddress);
 
@@ -120,6 +115,7 @@ contract Bridge is Ownable {
     */
     function addToken(address _tokenAddress) external onlyOwner returns (bool) {
         supportedTokens[_tokenAddress] = true;
+
         emit TokenAdded(_tokenAddress);
         return true;
     }
@@ -131,51 +127,83 @@ contract Bridge is Ownable {
     */
     function removeToken(address _tokenAddress) external onlyOwner returns (bool) {
         supportedTokens[_tokenAddress] = false;
+
         emit TokenRemoved(_tokenAddress);
         return true;
     }
 
     /**
-    * @notice Sets a new compensation amount for paying back
-    * @param _refundFee Amount of refund fee
+    * @notice Stores the amount of refund ETH
+    * @param _userAddress Address of user who deposited
+    * @param _refundAmount Refund amount
     * @return True if everything went well
     */
-    function setRefundFee(uint256 _refundFee) external onlyOwner returns (bool) {
-        refundFee = _refundFee;
+    function setRefundETH(address _userAddress, uint256 _refundAmount) external onlyOwner returns (bool) {
+        Refund memory _refund = refundETH[_userAddress];
+        _refund.amount = _refund.amount.add(_refundAmount);
+        _refund.gasPrice = tx.gasprice;
+        refundETH[_userAddress] = _refund;
+
+        emit RefundETHSet(msg.sender, _refundAmount);
         return true;
     }
 
     /**
-    * @notice Transfers the amount of the deposit if an error occurred during the deposit
-    * @param _user Depositor
-    * @param _amount Deposit amount
+    * @notice Stores the amount of refund ERC20
+    * @param _userAddress Address of user who deposited
+    * @param _userAddress Address of refund token
+    * @param _refundAmount Refund amount
     * @return True if everything went well
     */
-    function payBackETH(address _user, uint256 _amount) external onlyOwner returns (bool) {
-        (bool _success,) = payable(_user).call{value : _amount}("");
-        require(_success, "Failed to pay back the deposit amount.");
+    function setRefundERC20(address _userAddress, address _tokenAddress, uint256 _refundAmount)
+    external onlyOwner returns (bool)
+    {
+        Refund memory _refund = refundERC20[_userAddress][_tokenAddress];
+        _refund.amount = _refund.amount.add(_refundAmount);
+        _refund.gasPrice = tx.gasprice;
+        refundERC20[_userAddress][_tokenAddress] = _refund;
 
-        (_success,) = payable(msg.sender).call{value : refundFee}("");
-        require(_success, "Failed to pay the compensation for paying back.");
-        refundFeeDeposited[_user] = false;
+        emit RefundERC20Set(msg.sender, _tokenAddress, _refundAmount);
+        return true;
+    }
+
+    /**
+    * @notice Refunds ETH to msg sender
+    * @return True if everything went well
+    */
+    function claimRefundETH() external payable returns (bool) {
+        Refund memory _refund = refundETH[msg.sender];
+        uint256 _refundFee = _refund.gasPrice.mul(refundGas);
+        require(msg.value >= _refundFee, "");
+
+        (bool _success,) = payable(msg.sender).call{value : _refund.amount}("");
+        require(_success, "Failed to transfer claimed ETH.");
+
+        emit RefundETHClaimed(msg.sender, _refund.amount);
+
+        delete refundETH[msg.sender];
 
         return true;
     }
 
     /**
-    * @notice Transfers the amount of the deposit if an error occurred during the deposit
-    * @param _user Depositor
-    * @param _tokenAddress Token address
-    * @param _amount Deposit amount
+    * @notice Refunds ERC20 to msg sender
+    * @param _tokenAddress Address of claimable refund token
     * @return True if everything went well
     */
-    function payBackERC20(address _user, address _tokenAddress, uint256 _amount) external onlyOwner returns (bool) {
-        bool _success = IERC20Token(_tokenAddress).transfer(_user, _amount);
-        require(_success, "Failed to pay back");
+    function claimRefundERC20(address _tokenAddress)
+    external payable returns (bool)
+    {
+        Refund memory _refund = refundERC20[msg.sender][_tokenAddress];
+        uint256 _refundFee = _refund.gasPrice.mul(refundGas);
+        require(msg.value >= _refundFee, "");
 
-        (_success,) = payable(msg.sender).call{value : refundFee}("");
-        require(_success, "Failed to pay the compensation for paying back.");
-        refundFeeDeposited[_user] = false;
+        bool _success = IERC20Token(_tokenAddress).transfer(msg.sender, _refund.amount);
+        require(_success, "Failed to transfer locked ERC20.");
+
+        emit RefundERC20Claimed(msg.sender, _tokenAddress, _refund.amount);
+
+        delete refundERC20[msg.sender][_tokenAddress];
 
         return true;
     }
@@ -224,11 +252,23 @@ contract Bridge is Ownable {
     }
 
     /**
+    * @notice Sets refund gas limit
+    * @param _gas Amount of gas
+    * @return True if everything went well
+    */
+    function setRefundGas(uint256 _gas) external onlyOwner returns (bool) {
+        refundGas = _gas;
+        return true;
+    }
+
+
+    /**
     * @notice Sets allowance to lock deposit assets
     * @param _allowed If it is allowed to lock deposit assets
     * @return True if everything went well
     */
     function setAllowanceToLock(bool _allowed) external onlyOwner returns (bool) {
+        require(lockingFundsAllowed != _allowed, "Trying to set the same parameter value.");
         lockingFundsAllowed = _allowed;
 
         return true;
@@ -240,6 +280,7 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function setAllowanceToClaimLockedFunds(bool _allowed) external onlyOwner returns (bool) {
+        require(claimingLockedFundsAllowed != _allowed, "Trying to set the same parameter value.");
         claimingLockedFundsAllowed = _allowed;
 
         return true;
@@ -251,6 +292,7 @@ contract Bridge is Ownable {
     * @return True if everything went well
     */
     function setAllowanceToDeposit(bool _allowed) external onlyOwner returns (bool) {
+        require(depositingAllowed != _allowed, "Trying to set the same parameter value.");
         depositingAllowed = _allowed;
 
         return true;

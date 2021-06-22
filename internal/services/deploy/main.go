@@ -76,7 +76,7 @@ func (s *Service) deployContract() (*common.Address, error) {
 		txOpts,
 		s.ethereum,
 		deployConfig.SupportedTokens,
-		deployConfig.RefundFee,
+		deployConfig.RefundGasLimit,
 		deployConfig.DepositingAllowed,
 		deployConfig.LockingFundsAllowed,
 		deployConfig.ClaimingLockedFundsAllowed,
