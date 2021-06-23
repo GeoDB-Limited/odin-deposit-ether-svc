@@ -12,14 +12,14 @@ contract Bridge is Ownable {
     using Address for address;
 
     struct Refund {
-        uint256 gasPrice;
+        uint256 fee;
         uint256 amount;
     }
 
-    uint256 public refundGas;
-    bool depositingAllowed;
-    bool lockingFundsAllowed;
-    bool claimingLockedFundsAllowed;
+    uint256 refundGas;
+    bool public depositingAllowed;
+    bool public lockingFundsAllowed;
+    bool public claimingLockedFundsAllowed;
 
     mapping(address => bool) public supportedTokens;
 
@@ -141,7 +141,7 @@ contract Bridge is Ownable {
     function setRefundETH(address _userAddress, uint256 _refundAmount) external onlyOwner returns (bool) {
         Refund memory _refund = refundETH[_userAddress];
         _refund.amount = _refund.amount.add(_refundAmount);
-        _refund.gasPrice = tx.gasprice;
+        _refund.fee = _refund.fee.add(tx.gasprice.mul(refundGas));
         refundETH[_userAddress] = _refund;
 
         emit RefundETHSet(msg.sender, _refundAmount);
@@ -160,7 +160,7 @@ contract Bridge is Ownable {
     {
         Refund memory _refund = refundERC20[_userAddress][_tokenAddress];
         _refund.amount = _refund.amount.add(_refundAmount);
-        _refund.gasPrice = tx.gasprice;
+        _refund.fee = _refund.fee.add(tx.gasprice.mul(refundGas));
         refundERC20[_userAddress][_tokenAddress] = _refund;
 
         emit RefundERC20Set(msg.sender, _tokenAddress, _refundAmount);
@@ -173,11 +173,14 @@ contract Bridge is Ownable {
     */
     function claimRefundETH() external payable returns (bool) {
         Refund memory _refund = refundETH[msg.sender];
-        uint256 _refundFee = _refund.gasPrice.mul(refundGas);
-        require(msg.value >= _refundFee, "");
+        require(_refund.fee > 0, "Zero refund amount.");
+        require(msg.value >= _refund.fee, "Insufficient refund fee.");
 
         (bool _success,) = payable(msg.sender).call{value : _refund.amount}("");
         require(_success, "Failed to transfer claimed ETH.");
+
+        (_success,) = payable(owner()).call{value : _refund.fee}("");
+        require(_success, "Failed to pay the compensation for paying back.");
 
         emit RefundETHClaimed(msg.sender, _refund.amount);
 
@@ -195,11 +198,14 @@ contract Bridge is Ownable {
     external payable returns (bool)
     {
         Refund memory _refund = refundERC20[msg.sender][_tokenAddress];
-        uint256 _refundFee = _refund.gasPrice.mul(refundGas);
-        require(msg.value >= _refundFee, "");
+        require(_refund.fee > 0, "Zero refund amount.");
+        require(msg.value >= _refund.fee, "Insufficient refund fee.");
 
         bool _success = IERC20Token(_tokenAddress).transfer(msg.sender, _refund.amount);
         require(_success, "Failed to transfer locked ERC20.");
+
+        (_success,) = payable(owner()).call{value : _refund.fee}("");
+        require(_success, "Failed to pay the compensation for paying back.");
 
         emit RefundERC20Claimed(msg.sender, _tokenAddress, _refund.amount);
 
