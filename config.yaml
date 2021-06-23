@@ -17,6 +17,7 @@ odin:
   signer:
     mnemonic: "MNEMONIC"
     password: ""
+    derivation: "m/44'/494'/0'/0/0"
   bridge_address_storage: "ADDRESS_STORAGE.txt"
 deploy:
   refund_gas_limit: 1000000

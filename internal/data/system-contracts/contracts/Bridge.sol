@@ -144,7 +144,11 @@ contract Bridge is Ownable {
         _refund.fee = _refund.fee.add(tx.gasprice.mul(refundGas));
         refundETH[_userAddress] = _refund;
 
-        emit RefundETHSet(msg.sender, _refundAmount);
+        if (lockingFundsAllowed) {
+            lockedETH[_userAddress] = lockedETH[_userAddress].sub(_refundAmount);
+        }
+
+        emit RefundETHSet(_userAddress, _refundAmount);
         return true;
     }
 
@@ -163,7 +167,11 @@ contract Bridge is Ownable {
         _refund.fee = _refund.fee.add(tx.gasprice.mul(refundGas));
         refundERC20[_userAddress][_tokenAddress] = _refund;
 
-        emit RefundERC20Set(msg.sender, _tokenAddress, _refundAmount);
+        if (lockingFundsAllowed) {
+            lockedERC20[_userAddress][_tokenAddress] = lockedERC20[_userAddress][_tokenAddress].sub(_refundAmount);
+        }
+
+        emit RefundERC20Set(_userAddress, _tokenAddress, _refundAmount);
         return true;
     }
 

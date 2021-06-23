@@ -3,7 +3,7 @@ module github.com/GeoDB-Limited/odin-deposit-ether-svc
 go 1.15
 
 require (
-	github.com/GeoDB-Limited/odin-core v1.0.1-0.20210420142537-c25dc6c4d0ce
+	github.com/GeoDB-Limited/odin-core v1.0.1-0.20210618110855-2bbb179fb3b9
 	github.com/alecthomas/kingpin v2.2.6+incompatible
 	github.com/cosmos/cosmos-sdk v0.42.3
 	github.com/cosmos/go-bip39 v1.0.0

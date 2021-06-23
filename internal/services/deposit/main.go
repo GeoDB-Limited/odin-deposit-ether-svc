@@ -256,6 +256,10 @@ func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (
 		)
 	}
 
+	if withdrawalAmount.Amount.Equal(sdk.NewIntFromUint64(0)) {
+		return sdk.Coin{}, errors.New("insufficient deposit amount")
+	}
+
 	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
@@ -286,6 +290,10 @@ func (s *Service) exchangeERC20(
 			amount.String(),
 			rate.String(),
 		)
+	}
+
+	if withdrawalAmount.Amount.Equal(sdk.NewIntFromUint64(0)) {
+		return sdk.Coin{}, errors.New("insufficient deposit amount")
 	}
 
 	s.logger.WithFields(logrus.Fields{
