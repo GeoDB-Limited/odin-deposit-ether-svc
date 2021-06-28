@@ -256,6 +256,10 @@ func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (
 		)
 	}
 
+	if withdrawalAmount.Amount.Equal(sdk.NewIntFromUint64(0)) {
+		return sdk.Coin{}, errors.New("insufficient deposit amount")
+	}
+
 	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
@@ -288,6 +292,10 @@ func (s *Service) exchangeERC20(
 		)
 	}
 
+	if withdrawalAmount.Amount.Equal(sdk.NewIntFromUint64(0)) {
+		return sdk.Coin{}, errors.New("insufficient deposit amount")
+	}
+
 	s.logger.WithFields(logrus.Fields{
 		"eth_address":       ethereumAddress,
 		"deposit_amount":    amount,
@@ -313,7 +321,7 @@ func (s *Service) payBackETH(userAddress common.Address, amount *big.Int) error 
 		return errors.Wrap(err, "failed to get tx options")
 	}
 
-	tx, err := s.contract.PayBackETH(opts, userAddress, amount)
+	tx, err := s.contract.SetRefundETH(opts, userAddress, amount)
 	if err != nil {
 		return errors.Wrap(err, "failed send tx to pay back ETH")
 	}
@@ -334,7 +342,7 @@ func (s *Service) payBackERC20(userAddress common.Address, tokenAddress common.A
 		return errors.Wrap(err, "failed to get tx options")
 	}
 
-	tx, err := s.contract.PayBackERC20(opts, userAddress, tokenAddress, amount)
+	tx, err := s.contract.SetRefundERC20(opts, userAddress, tokenAddress, amount)
 	if err != nil {
 		return errors.Wrap(err, "failed send tx to pay back ETH")
 	}
@@ -362,9 +370,13 @@ func (s *Service) getTxOpts() (*bind.TransactOpts, error) {
 		return nil, errors.Wrap(err, "failed to create the transactor")
 	}
 
-	cfg := s.config.EthereumConfig()
-	opts.GasLimit = cfg.GasLimit.Uint64()
-	opts.GasPrice = cfg.GasPrice
+	gasPrice, err := s.ethereum.SuggestGasPrice(s.context)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to suggest gas price")
+	}
+
+	opts.GasLimit = s.config.DeployConfig().RefundGasLimit.Uint64()
+	opts.GasPrice = gasPrice
 
 	return opts, nil
 }

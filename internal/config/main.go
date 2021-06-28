@@ -27,7 +27,6 @@ type Config interface {
 	EthereumSigner() (common.Address, *ecdsa.PrivateKey)
 	OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey)
 
-	DepositCompensation() *big.Int
 	BridgeAddressStorage() string
 }
 
@@ -49,8 +48,9 @@ type OdinConfig struct {
 
 // OdinSignerConfig defines configs for odin signer
 type OdinSignerConfig struct {
-	Mnemonic string `yaml:"mnemonic"`
-	Password string `yaml:"password"`
+	Mnemonic   string `yaml:"mnemonic"`
+	Password   string `yaml:"password"`
+	Derivation string `yaml:"derivation"`
 }
 
 // OdinChainConfig defines configs for Odin chain
@@ -83,7 +83,11 @@ type EthereumChainConfig struct {
 
 // DeployConfig defines the configurations of Deploy service.
 type DeployConfig struct {
-	SupportedTokens []common.Address `yaml:"supported_tokens"`
+	RefundGasLimit             *big.Int         `yaml:"refund_gas_limit"`
+	DepositingAllowed          bool             `yaml:"depositing_allowed"`
+	LockingFundsAllowed        bool             `yaml:"locking_funds_allowed"`
+	ClaimingLockedFundsAllowed bool             `yaml:"claiming_locked_funds_allowed"`
+	SupportedTokens            []common.Address `yaml:"supported_tokens"`
 }
 
 // NewConfig returns global service configurations.
@@ -164,7 +168,7 @@ func (c *config) OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey) {
 	seed := bip39.NewSeed(c.Odin.Signer.Mnemonic, c.Odin.Signer.Password)
 	master, ch := hd.ComputeMastersFromSeed(seed)
 
-	key, err := hd.DerivePrivateKeyForPath(master, ch, sdk.FullFundraiserPath)
+	key, err := hd.DerivePrivateKeyForPath(master, ch, c.Odin.Signer.Derivation)
 	if err != nil {
 		panic(errors.Wrap(err, "failed to derive odin private key for path"))
 	}
@@ -173,11 +177,6 @@ func (c *config) OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey) {
 	accAddress := sdk.AccAddress(pk.PubKey().Address())
 
 	return accAddress, &pk
-}
-
-// DepositCompensation calculates the deposit compensation from transaction params.
-func (c *config) DepositCompensation() *big.Int {
-	return c.Ethereum.Chain.GasPrice.Mul(c.Ethereum.Chain.GasPrice, c.Ethereum.Chain.GasLimit)
 }
 
 // BridgeAddressStorage returns the path to bridge address storage.

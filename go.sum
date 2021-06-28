@@ -44,8 +44,8 @@ github.com/DataDog/datadog-go v3.2.0+incompatible/go.mod h1:LButxg5PwREeZtORoXG3
 github.com/DataDog/zstd v1.4.1/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
 github.com/DataDog/zstd v1.4.5 h1:EndNeuB0l9syBZhut0wns3gV1hL8zX8LIu6ZiVHWLIQ=
 github.com/DataDog/zstd v1.4.5/go.mod h1:1jcaCB/ufaK+sKp1NBhlGmpz41jOoPQ35bpF36t7BBo=
-github.com/GeoDB-Limited/odin-core v1.0.1-0.20210420142537-c25dc6c4d0ce h1:fOM0rP42aA0+fzv6DP/EzTQAGaitT0OMVnu8DqDg7is=
-github.com/GeoDB-Limited/odin-core v1.0.1-0.20210420142537-c25dc6c4d0ce/go.mod h1:PHVN2ImhAxBIpddfYccLtZmkTszJIp4+38ZduDc7gYQ=
+github.com/GeoDB-Limited/odin-core v1.0.1-0.20210618110855-2bbb179fb3b9 h1:ng4YLzL67/ol1SSH55lwgVeGG+vrQisc1jgOU9P1oI8=
+github.com/GeoDB-Limited/odin-core v1.0.1-0.20210618110855-2bbb179fb3b9/go.mod h1:ROmYmzuVteppJdhIBFVaNPXC/sxrPz9Vxulyl/fz/1A=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
 github.com/Masterminds/squirrel v1.5.0/go.mod h1:NNaOrjSoIDfDA40n7sr2tPNZRfjzjA400rg+riTZj10=
 github.com/OneOfOne/xxhash v1.2.2 h1:KMrpdQIwFcEqXDklaen+P1axHaj9BSKzvpUUfnHldSE=
