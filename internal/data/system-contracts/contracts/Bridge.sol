@@ -92,7 +92,7 @@ contract Bridge is Ownable {
     function depositERC20(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
     external onlyDepositingAllowed payable returns (bool)
     {
-        require(_tokenAddress.isContract(), "Given token is not a contract");
+        require(_tokenAddress.isContract(), "Given token is not a contract.");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
 
         IERC20Token _token = IERC20Token(_tokenAddress);

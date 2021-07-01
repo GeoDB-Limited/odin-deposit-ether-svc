@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
+	"time"
 )
 
 var (
@@ -49,7 +50,9 @@ type signer struct {
 // New creates a client that uses the given cosmos sdk service client.
 func New(ctx context.Context, cfg config.Config) Client {
 	odinConfig := cfg.OdinConfig()
-	conn, err := grpc.Dial(odinConfig.Endpoint, grpc.WithInsecure(), grpc.WithBlock())
+
+	cfg.Logger().Info("Connecting to the node...")
+	conn, err := grpc.Dial(odinConfig.Endpoint, grpc.WithInsecure(), grpc.WithBlock(), grpc.WithTimeout(5*time.Second))
 	if err != nil {
 		panic(errors.Wrapf(err, "failed to dial %s", odinConfig.Endpoint))
 	}
