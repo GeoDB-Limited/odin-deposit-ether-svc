@@ -2,6 +2,7 @@ package deposit
 
 import (
 	"context"
+	"fmt"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
@@ -323,14 +324,14 @@ func (s *Service) payBackETH(userAddress common.Address, amount *big.Int) error 
 
 	tx, err := s.contract.SetRefundETH(opts, userAddress, amount)
 	if err != nil {
-		return errors.Wrap(err, "failed send tx to pay back ETH")
+		return errors.Wrap(err, fmt.Sprintf("failed to set refund %s ETH for %s", amount, userAddress))
 	}
 
 	s.logger.WithFields(logrus.Fields{
 		"eth_address":    userAddress,
 		"deposit_amount": amount,
 		"tx_hash":        tx.Hash(),
-	}).Info("Payed back ETH")
+	}).Info("Set refund ETH")
 
 	return nil
 }
@@ -344,7 +345,7 @@ func (s *Service) payBackERC20(userAddress common.Address, tokenAddress common.A
 
 	tx, err := s.contract.SetRefundERC20(opts, userAddress, tokenAddress, amount)
 	if err != nil {
-		return errors.Wrap(err, "failed send tx to pay back ETH")
+		return errors.Wrap(err, fmt.Sprintf("failed to set refund %s ERC20: %s for %s", amount, tokenAddress, userAddress))
 	}
 
 	s.logger.WithFields(logrus.Fields{
@@ -352,7 +353,7 @@ func (s *Service) payBackERC20(userAddress common.Address, tokenAddress common.A
 		"deposit_amount": amount,
 		"token_address":  tokenAddress,
 		"tx_hash":        tx.Hash(),
-	}).Info("Payed back ERC20")
+	}).Info("Set refund ERC20")
 
 	return nil
 }
