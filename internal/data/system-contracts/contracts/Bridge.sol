@@ -89,8 +89,8 @@ contract Bridge is Ownable {
     * @param _depositAmount Amount to deposit
     * @return True if everything went well
     */
-    function depositERC20(address _tokenAddress, string memory _odinAddress, uint256 _depositAmount)
-    external onlyDepositingAllowed payable returns (bool)
+    function depositERC20(string memory _odinAddress, address _tokenAddress, uint256 _depositAmount)
+    external onlyDepositingAllowed returns (bool)
     {
         require(_tokenAddress.isContract(), "Given token is not a contract.");
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
@@ -202,9 +202,7 @@ contract Bridge is Ownable {
     * @param _tokenAddress Address of claimable refund token
     * @return True if everything went well
     */
-    function claimRefundERC20(address _tokenAddress)
-    external payable returns (bool)
-    {
+    function claimRefundERC20(address _tokenAddress) external payable returns (bool) {
         Refund memory _refund = refundERC20[msg.sender][_tokenAddress];
         require(_refund.fee > 0, "Zero refund amount.");
         require(msg.value >= _refund.fee, "Insufficient refund fee.");
