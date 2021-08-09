@@ -78,16 +78,36 @@ contract Bridge is Ownable {
         require(supportedTokens[_tokenAddress], "Unsupported token, failed to deposit.");
 
         IERC20Token _token = IERC20Token(_tokenAddress);
+        address _bridgeAddress = address(this);
+        uint256 _balanceBeforeTransfer = _token.balanceOf(_bridgeAddress);
 
-        bool _success = _token.transferFrom(msg.sender, address(this), _depositAmount);
+        bool _success = _token.transferFrom(msg.sender, _bridgeAddress, _depositAmount);
         require(_success, "Failed to transfer tokens.");
 
+        uint256 _balanceAfterTransfer = _token.balanceOf(_bridgeAddress);
+        uint256 _actualDepositAmount = _balanceAfterTransfer.sub(_balanceBeforeTransfer);
+
         if (lockingFundsAllowed) {
-            lockedTokens[msg.sender][_tokenAddress] = lockedTokens[msg.sender][_tokenAddress].add(_depositAmount);
-            emit TokensLocked(msg.sender, _odinAddress, _depositAmount, _tokenAddress, _token.symbol(), _token.decimals());
+            lockedTokens[msg.sender][_tokenAddress] = lockedTokens[msg.sender][_tokenAddress].add(_actualDepositAmount);
+            emit TokensLocked(
+                msg.sender,
+                _odinAddress,
+                _actualDepositAmount,
+                _tokenAddress,
+                _token.symbol(),
+                _token.decimals()
+            );
         }
 
-        emit TokensDeposited(msg.sender, _odinAddress, _depositAmount, _tokenAddress, _token.symbol(), _token.decimals());
+        emit TokensDeposited(
+            msg.sender,
+            _odinAddress,
+            _actualDepositAmount,
+            _tokenAddress,
+            _token.symbol(),
+            _token.decimals()
+        );
+
         return true;
     }
 
