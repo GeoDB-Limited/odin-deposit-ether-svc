@@ -15,14 +15,6 @@ import (
 	"math/big"
 )
 
-const (
-	ETHExchangeSymbol       = "ETH" // used to get an exchange rate of ETH
-	ETHPrecision      int64 = 18    // the precision of ETH
-
-	ETHDepositType = iota
-	ERC20DepositType
-)
-
 // Service defines a service that allows exchanging ETH and ERC20 for odin.
 type Service struct {
 	config   config.Config
@@ -41,7 +33,6 @@ type WithdrawalDetails struct {
 	TokenAddress    common.Address
 	TokenSymbol     string
 	TokenPrecision  int64
-	DepositType     int
 }
 
 // New creates a service that allows exchanging ETH and ERC20 for odin.
@@ -71,40 +62,15 @@ func New(ctx context.Context, cfg config.Config) *Service {
 // Run performs events listening and querying the Odin minting module.
 func (s *Service) Run() {
 	withdrawals := make(chan WithdrawalDetails)
-	go s.subscribeETHTransfer(withdrawals)
 	go s.subscribeERC20Transfer(withdrawals)
 	s.logger.Info("Starting deposits processing service...")
 	s.processTransfer(withdrawals)
 }
 
-// subscribeETHTransfer subscribes on events of a bridge contract.
-func (s *Service) subscribeETHTransfer(withdrawals chan<- WithdrawalDetails) {
-	logs := make(chan *generated.BridgeETHDeposited)
-	subscription, err := s.contract.WatchETHDeposited(&bind.WatchOpts{Context: s.context}, logs, []common.Address{})
-	if err != nil {
-		panic(errors.Wrap(err, "failed to subscribe on event logs"))
-	}
-	defer subscription.Unsubscribe()
-
-	for event := range logs {
-		if event.Raw.Removed {
-			s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
-			continue
-		}
-
-		withdrawals <- WithdrawalDetails{
-			EthereumAddress: event.UserAddress,
-			OdinAddress:     event.OdinAddress,
-			DepositAmount:   event.DepositAmount,
-			DepositType:     ETHDepositType,
-		}
-	}
-}
-
 // subscribeERC20Transfer subscribes on events of a bridge contract.
 func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
-	logs := make(chan *generated.BridgeERC20Deposited)
-	subscription, err := s.contract.WatchERC20Deposited(
+	logs := make(chan *generated.BridgeTokensDeposited)
+	subscription, err := s.contract.WatchTokensDeposited(
 		&bind.WatchOpts{Context: s.context},
 		logs,
 		[]common.Address{},
@@ -128,7 +94,6 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 			TokenAddress:    event.TokenAddress,
 			TokenSymbol:     event.Symbol,
 			TokenPrecision:  int64(event.TokenPrecision),
-			DepositType:     ERC20DepositType,
 		}
 	}
 }
@@ -136,74 +101,28 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 // processTransfer handles events from ethereum smart contract
 func (s *Service) processTransfer(withdrawals <-chan WithdrawalDetails) {
 	for w := range withdrawals {
-		switch w.DepositType {
-		case ETHDepositType:
-			if err := s.processETHTransfer(w); err != nil {
-				s.logger.WithFields(logrus.Fields{
-					"eth_address": w.EthereumAddress,
-					"amount":      w.DepositAmount,
-				}).Error(err, "Failed to process ETH transfer")
+		if err := s.processTokensTransfer(w); err != nil {
+			s.logger.WithFields(logrus.Fields{
+				"eth_address":   w.EthereumAddress,
+				"amount":        w.DepositAmount,
+				"token_address": w.TokenAddress,
+			}).Error(err, "Failed to process ERC20 transfer")
 
-				if err := s.payBackETH(w.EthereumAddress, w.DepositAmount); err != nil {
-					s.logger.WithFields(logrus.Fields{
-						"eth_address": w.EthereumAddress,
-						"amount":      w.DepositAmount,
-					}).Error(err, "Failed to pay back ETH")
-				}
-			}
-		case ERC20DepositType:
-			if err := s.processERC20Transfer(w); err != nil {
+			if err := s.setRefund(w.EthereumAddress, w.TokenAddress, w.DepositAmount); err != nil {
 				s.logger.WithFields(logrus.Fields{
 					"eth_address":   w.EthereumAddress,
 					"amount":        w.DepositAmount,
 					"token_address": w.TokenAddress,
-				}).Error(err, "Failed to process ERC20 transfer")
-
-				if err := s.payBackERC20(w.EthereumAddress, w.TokenAddress, w.DepositAmount); err != nil {
-					s.logger.WithFields(logrus.Fields{
-						"eth_address":   w.EthereumAddress,
-						"amount":        w.DepositAmount,
-						"token_address": w.TokenAddress,
-					}).Error(err, "Failed to pay back ERC20")
-				}
+				}).Error(err, "Failed to pay back ERC20")
 			}
 		}
+
 	}
 }
 
-// processETHTransfer exchanges ETH and claims withdrawal from odin mint module
-func (s *Service) processETHTransfer(withdrawal WithdrawalDetails) error {
-	withdrawalAmount, err := s.exchangeETH(withdrawal.EthereumAddress, withdrawal.DepositAmount)
-	if err != nil {
-		return errors.Wrapf(
-			err,
-			"failed to exchange deposited ETH for user: %s deposit: %s",
-			withdrawal.OdinAddress,
-			withdrawal.DepositAmount,
-		)
-	}
-
-	if err := s.odin.ClaimWithdrawal(withdrawal.OdinAddress, withdrawalAmount); err != nil {
-		return errors.Wrapf(
-			err,
-			"failed to claim withdrawal for user: %s amount: %s",
-			withdrawal.OdinAddress,
-			withdrawalAmount,
-		)
-	}
-
-	s.logger.WithFields(logrus.Fields{
-		"ethereum_address": withdrawal.EthereumAddress,
-		"odin_address":     withdrawal.OdinAddress,
-		"amount":           withdrawal.DepositAmount,
-	}).Info("User deposited ETH")
-
-	return nil
-}
-
-// processERC20Transfer exchanges ERC20 and claims withdrawal from odin mint module
-func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
-	withdrawalAmount, err := s.exchangeERC20(
+// processTokensTransfer exchanges ERC20 and claims withdrawal from odin mint module
+func (s *Service) processTokensTransfer(withdrawal WithdrawalDetails) error {
+	withdrawalAmount, err := s.exchangeTokens(
 		withdrawal.EthereumAddress,
 		withdrawal.DepositAmount,
 		withdrawal.TokenSymbol,
@@ -240,39 +159,8 @@ func (s *Service) processERC20Transfer(withdrawal WithdrawalDetails) error {
 	return nil
 }
 
-// exchangeETH exchanges deposited ETH to odin tokens
-func (s *Service) exchangeETH(ethereumAddress common.Address, amount *big.Int) (sdk.Coin, error) {
-	rate, err := s.odin.GetExchangeRate(ETHExchangeSymbol)
-	if err != nil {
-		return sdk.Coin{}, errors.Wrap(err, "failed to get the exchange rate")
-	}
-
-	withdrawalAmount, err := s.exchange(amount, rate, ETHPrecision)
-	if err != nil {
-		return sdk.Coin{}, errors.Wrapf(
-			err,
-			"failed to exchange the deposit: %s with rate: %s",
-			amount.String(),
-			rate.String(),
-		)
-	}
-
-	if withdrawalAmount.Amount.Equal(sdk.NewIntFromUint64(0)) {
-		return sdk.Coin{}, errors.New("insufficient deposit amount")
-	}
-
-	s.logger.WithFields(logrus.Fields{
-		"eth_address":       ethereumAddress,
-		"deposit_amount":    amount,
-		"rate":              rate,
-		"withdrawal_amount": withdrawalAmount.Amount,
-	}).Info("Exchanged ETH")
-
-	return withdrawalAmount, nil
-}
-
-// exchangeERC20 exchanges deposited ERC20 to odin tokens
-func (s *Service) exchangeERC20(
+// exchangeTokens exchanges deposited ERC20 to odin tokens
+func (s *Service) exchangeTokens(
 	ethereumAddress common.Address,
 	amount *big.Int,
 	tokenSymbol string,
@@ -315,35 +203,14 @@ func (s *Service) exchange(amount *big.Int, rate sdk.Dec, precision int64) (sdk.
 	return sdk.NewCoin(s.config.OdinConfig().Denom, withdrawalAmount.TruncateInt()), nil
 }
 
-// payBackETH pays back the deposit amount
-func (s *Service) payBackETH(userAddress common.Address, amount *big.Int) error {
+// setRefund pays back the deposit amount
+func (s *Service) setRefund(userAddress common.Address, tokenAddress common.Address, amount *big.Int) error {
 	opts, err := s.getTxOpts()
 	if err != nil {
 		return errors.Wrap(err, "failed to get tx options")
 	}
 
-	tx, err := s.contract.SetRefundETH(opts, userAddress, amount)
-	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("failed to set refund %s ETH for %s", amount, userAddress))
-	}
-
-	s.logger.WithFields(logrus.Fields{
-		"eth_address":    userAddress,
-		"deposit_amount": amount,
-		"tx_hash":        tx.Hash(),
-	}).Info("Set refund ETH")
-
-	return nil
-}
-
-// payBackERC20 pays back the deposit amount
-func (s *Service) payBackERC20(userAddress common.Address, tokenAddress common.Address, amount *big.Int) error {
-	opts, err := s.getTxOpts()
-	if err != nil {
-		return errors.Wrap(err, "failed to get tx options")
-	}
-
-	tx, err := s.contract.SetRefundERC20(opts, userAddress, tokenAddress, amount)
+	tx, err := s.contract.SetRefund(opts, userAddress, tokenAddress, amount)
 	if err != nil {
 		return errors.Wrap(err, fmt.Sprintf("failed to set refund %s ERC20: %s for %s", amount, tokenAddress, userAddress))
 	}
