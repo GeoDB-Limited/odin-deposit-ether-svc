@@ -8,7 +8,8 @@
     "test": "truffle test",
     "lint": "npm run lint:js && npm run lint:sol",
     "lint:js": "eslint test/*.js --fix",
-    "lint:sol": "solhint contracts/*.sol --fix"
+    "lint:sol": "solhint contracts/*.sol --fix",
+    "compile-types": "typechain --target=web3-v1 --out-dir=build/web3-types build/*.abi"
   },
   "keywords": [
     "solidity"
@@ -24,11 +25,13 @@
     "truffle-assertions": "^0.9.2"
   },
   "devDependencies": {
+    "@typechain/web3-v1": "^3.0.0",
     "chai": "^4.3.3",
     "eslint": "^7.21.0",
     "eslint-config-google": "^0.14.0",
     "mocha": "^8.3.1",
     "solhint": "^3.3.3",
-    "web3": "^1.2.9"
+    "web3": "^1.2.9",
+    "typechain": "^5.0.0"
   }
 }
