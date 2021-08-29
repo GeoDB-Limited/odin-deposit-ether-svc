@@ -28,6 +28,7 @@ type Config interface {
 	OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey)
 
 	BridgeAddressStorage() string
+	NetworkName() string
 }
 
 // Config defines global service configurations.
@@ -44,6 +45,7 @@ type OdinConfig struct {
 	Signer OdinSignerConfig `yaml:"signer"`
 
 	BridgeAddressStorage string `yaml:"bridge_address_storage"`
+	NetworkName string `yaml:"network_name"`
 }
 
 // OdinSignerConfig defines configs for odin signer
@@ -182,4 +184,9 @@ func (c *config) OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey) {
 // BridgeAddressStorage returns the path to bridge address storage.
 func (c *config) BridgeAddressStorage() string {
 	return c.Odin.BridgeAddressStorage
+}
+
+// NetworkName returns the current network name.
+func (c *config) NetworkName() string {
+	return c.Odin.NetworkName
 }
