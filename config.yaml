@@ -19,6 +19,7 @@ odin:
     password: ""
     derivation: "m/44'/494'/0'/0/0"
   bridge_address_storage: "ADDRESS_STORAGE.txt"
+  network_name: "CURRENT NETWORK NAME"
 deploy:
   refund_gas_limit: 1000000
   depositing_allowed: true

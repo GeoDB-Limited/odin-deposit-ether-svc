@@ -83,12 +83,17 @@ func (c *client) WithSigner() Client {
 // GetBridgeAddress returns an address of the bridge contract.
 func (c *client) GetBridgeAddress() (common.Address, error) {
 	mintClient := odinmint.NewQueryClient(c.connection)
-	response, err := mintClient.EthIntegrationAddress(c.context, &odinmint.QueryEthIntegrationAddressRequest{})
+	networkName := c.config.NetworkName()
+
+	response, err := mintClient.IntegrationAddress(
+		c.context,
+		&odinmint.QueryIntegrationAddressRequest{NetworkName: networkName},
+	)
 	if err != nil {
-		return common.Address{}, errors.Wrap(err, "failed to query ethereum integration address")
+		return common.Address{}, errors.Wrap(err, "failed to query integration address")
 	}
 
-	return common.HexToAddress(response.EthIntegrationAddress), nil
+	return common.HexToAddress(response.IntegrationAddress), nil
 }
 
 // ClaimWithdrawal claims minting from Odin
