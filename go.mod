@@ -10,6 +10,7 @@ require (
 	github.com/ethereum/go-ethereum v1.10.1
 	github.com/pkg/errors v0.9.1
 	github.com/sirupsen/logrus v1.8.1
+	github.com/tendermint/tendermint v0.34.8 // indirect
 	google.golang.org/grpc v1.36.0
 	gopkg.in/yaml.v2 v2.4.0
 )

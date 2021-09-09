@@ -21,8 +21,9 @@ import (
 type Config interface {
 	Logger() *logrus.Logger
 	EthereumClient() *ethclient.Client
-	DeployConfig() *DeployConfig
 	OdinConfig() *OdinChainConfig
+	DeployConfig() *DeployConfig
+	FixConfig() *FixConfig
 	EthereumConfig() *EthereumChainConfig
 	EthereumSigner() (common.Address, *ecdsa.PrivateKey)
 	OdinSigner() (sdk.AccAddress, *secp256k1.PrivKey)
@@ -36,6 +37,7 @@ type config struct {
 	Ethereum EthereumConfig `yaml:"ethereum"`
 	Odin     OdinConfig     `yaml:"odin"`
 	Deploy   DeployConfig   `yaml:"deploy"`
+	Fix 	 FixConfig 		`yaml:"fix"`
 }
 
 // OdinConfig defines the configurations of odin client.
@@ -90,6 +92,14 @@ type DeployConfig struct {
 	SupportedTokens            []common.Address `yaml:"supported_tokens"`
 }
 
+// FixConfig defines the configurations of Fix service.
+type FixConfig struct {
+	ClientEndpoint	string			`yaml:"client_endpoint"`
+	FromBlockNumber	*big.Int		`yaml:"from_block_number"`
+	BridgeAddress	common.Address	`yaml:"bridge_address"`
+	MaxTxsPerPage	int				`yaml:"max_txs_per_page"`
+}
+
 // NewConfig returns global service configurations.
 func NewConfig(path string) Config {
 	cfg := config{}
@@ -123,6 +133,11 @@ func (c *config) Logger() *logrus.Logger {
 // DeployConfig returns the configurations of deploy service.
 func (c *config) DeployConfig() *DeployConfig {
 	return &c.Deploy
+}
+
+// FixConfig returns the configurations of fix service.
+func (c *config) FixConfig() *FixConfig {
+	return  &c.Fix
 }
 
 // EthereumClient returns ethereum client.

@@ -27,3 +27,6 @@ deploy:
   supported_tokens:
     - "SUPPORTED TOKEN ADDRESS"
     - "ANOTHER ONE SUPPORTED TOKEN ADDRESS"
+fix:
+  from_block_number: 10277868
+  bridge_address: "BRIDGE_ADDRESS"
