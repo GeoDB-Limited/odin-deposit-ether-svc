@@ -3,6 +3,9 @@ package deposit
 import (
 	"context"
 	"fmt"
+	"math/big"
+	"time"
+
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/config"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/internal/data/system-contracts/generated"
 	"github.com/GeoDB-Limited/odin-deposit-ether-svc/odin/client"
@@ -12,7 +15,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"math/big"
 )
 
 // Service defines a service that allows exchanging ETH and ERC20 for odin.
@@ -67,34 +69,53 @@ func (s *Service) Run() {
 	s.processTransfer(withdrawals)
 }
 
-// subscribeERC20Transfer subscribes on events of a bridge contract.
 func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
-	logs := make(chan *generated.BridgeTokensDeposited)
-	subscription, err := s.contract.WatchTokensDeposited(
-		&bind.WatchOpts{Context: s.context},
-		logs,
-		[]common.Address{},
-		[]common.Address{},
-	)
+	toBN, err := s.ethereum.BlockNumber(s.context)
 	if err != nil {
-		panic(errors.Wrap(err, "failed to subscribe on event logs"))
+		s.logger.Fatal(err, "failed to get block number")
 	}
-	defer subscription.Unsubscribe()
+	c := s.config.DepositConfig()
+	fromBN, perPage, tickTime := c.FromBlockNumber, c.PerPage, c.TickerTime
 
-	for event := range logs {
-		if event.Raw.Removed {
-			s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+	ticker := time.NewTicker(time.Millisecond * tickTime)
+
+	for i := fromBN; i < toBN; i += perPage {
+		end := i + perPage
+		iter, err := s.contract.FilterTokensDeposited(
+			&bind.FilterOpts{Start: i, End: &end, Context: s.context}, nil, nil,
+		)
+		if err != nil {
+			s.logger.WithError(err).Error("failed to get contract events")
+			i -= perPage
 			continue
 		}
+		s.logger.Info("iterator:", iter)
 
-		withdrawals <- WithdrawalDetails{
-			EthereumAddress: event.UserAddress,
-			OdinAddress:     event.OdinAddress,
-			DepositAmount:   event.DepositAmount,
-			TokenAddress:    event.TokenAddress,
-			TokenSymbol:     event.Symbol,
-			TokenPrecision:  int64(event.TokenPrecision),
+		for iter.Next() {
+			event := iter.Event
+			s.logger.Info("event:", event)
+
+			if event.Raw.Removed {
+				s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+				continue
+			}
+			withdrawals <- WithdrawalDetails{
+				EthereumAddress: event.UserAddress,
+				OdinAddress:     event.OdinAddress,
+				DepositAmount:   event.DepositAmount,
+				TokenAddress:    event.TokenAddress,
+				TokenSymbol:     event.Symbol,
+				TokenPrecision:  int64(event.TokenPrecision),
+			}
 		}
+		if toBN < end {
+			toBN, err = s.ethereum.BlockNumber(s.context)
+			if err != nil {
+				s.logger.Fatal(err, "failed to get block number")
+			}
+		}
+
+		<-ticker.C
 	}
 }
 

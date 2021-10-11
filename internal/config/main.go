@@ -3,6 +3,10 @@ package config
 import (
 	"crypto/ecdsa"
 	"fmt"
+	"io/ioutil"
+	"math/big"
+	"time"
+
 	"github.com/cosmos/cosmos-sdk/crypto/hd"
 	"github.com/cosmos/cosmos-sdk/crypto/keys/secp256k1"
 	sdk "github.com/cosmos/cosmos-sdk/types"
@@ -13,8 +17,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"gopkg.in/yaml.v2"
-	"io/ioutil"
-	"math/big"
 )
 
 // Config defines an interface of global service configurations.
@@ -22,6 +24,7 @@ type Config interface {
 	Logger() *logrus.Logger
 	EthereumClient() *ethclient.Client
 	DeployConfig() *DeployConfig
+	DepositConfig() *DepositConfig
 	OdinConfig() *OdinChainConfig
 	EthereumConfig() *EthereumChainConfig
 	EthereumSigner() (common.Address, *ecdsa.PrivateKey)
@@ -37,6 +40,7 @@ type config struct {
 	Ethereum EthereumConfig `yaml:"ethereum"`
 	Odin     OdinConfig     `yaml:"odin"`
 	Deploy   DeployConfig   `yaml:"deploy"`
+	Deposit  DepositConfig  `yaml:"deposit"`
 }
 
 // OdinConfig defines the configurations of odin client.
@@ -45,7 +49,7 @@ type OdinConfig struct {
 	Signer OdinSignerConfig `yaml:"signer"`
 
 	BridgeAddressStorage string `yaml:"bridge_address_storage"`
-	NetworkName string `yaml:"network_name"`
+	NetworkName          string `yaml:"network_name"`
 }
 
 // OdinSignerConfig defines configs for odin signer
@@ -92,6 +96,13 @@ type DeployConfig struct {
 	SupportedTokens            []common.Address `yaml:"supported_tokens"`
 }
 
+// DepositConfig defines the configurations of Deposit service.
+type DepositConfig struct {
+	FromBlockNumber uint64        `yaml:"from_block_number"`
+	PerPage         uint64        `yaml:"per_page"`
+	TickerTime      time.Duration `yaml:"ticker_time"`
+}
+
 // NewConfig returns global service configurations.
 func NewConfig(path string) Config {
 	cfg := config{}
@@ -125,6 +136,11 @@ func (c *config) Logger() *logrus.Logger {
 // DeployConfig returns the configurations of deploy service.
 func (c *config) DeployConfig() *DeployConfig {
 	return &c.Deploy
+}
+
+// DepositConfig returns the configurations of deploy service.
+func (c *config) DepositConfig() *DepositConfig {
+	return &c.Deposit
 }
 
 // EthereumClient returns ethereum client.
