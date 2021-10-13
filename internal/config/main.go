@@ -24,7 +24,7 @@ type Config interface {
 	Logger() *logrus.Logger
 	EthereumClient() *ethclient.Client
 	DeployConfig() *DeployConfig
-	DepositConfig() *DepositConfig
+	DepositStreamingOpts() *DepositStreamingOpts
 	OdinConfig() *OdinChainConfig
 	EthereumConfig() *EthereumChainConfig
 	EthereumSigner() (common.Address, *ecdsa.PrivateKey)
@@ -36,11 +36,11 @@ type Config interface {
 
 // Config defines global service configurations.
 type config struct {
-	Log      string         `yaml:"log"`
-	Ethereum EthereumConfig `yaml:"ethereum"`
-	Odin     OdinConfig     `yaml:"odin"`
-	Deploy   DeployConfig   `yaml:"deploy"`
-	Deposit  DepositConfig  `yaml:"deposit"`
+	Log      string               `yaml:"log"`
+	Ethereum EthereumConfig       `yaml:"ethereum"`
+	Odin     OdinConfig           `yaml:"odin"`
+	Deploy   DeployConfig         `yaml:"deploy"`
+	Deposit  DepositStreamingOpts `yaml:"deposit"`
 }
 
 // OdinConfig defines the configurations of odin client.
@@ -96,8 +96,8 @@ type DeployConfig struct {
 	SupportedTokens            []common.Address `yaml:"supported_tokens"`
 }
 
-// DepositConfig defines the configurations of Deposit service.
-type DepositConfig struct {
+// DepositStreamingOpts defines the configurations of Deposit service.
+type DepositStreamingOpts struct {
 	FromBlockNumber uint64        `yaml:"from_block_number"`
 	PerPage         uint64        `yaml:"per_page"`
 	TickerTime      time.Duration `yaml:"ticker_time"`
@@ -138,8 +138,8 @@ func (c *config) DeployConfig() *DeployConfig {
 	return &c.Deploy
 }
 
-// DepositConfig returns the configurations of deploy service.
-func (c *config) DepositConfig() *DepositConfig {
+// DepositStreamingOpts returns the configurations of deploy service.
+func (c *config) DepositStreamingOpts() *DepositStreamingOpts {
 	return &c.Deposit
 }
 

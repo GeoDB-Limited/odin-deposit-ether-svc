@@ -74,10 +74,9 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 	if err != nil {
 		s.logger.Fatal(err, "failed to get block number")
 	}
-	c := s.config.DepositConfig()
-	fromBN, perPage, tickTime := c.FromBlockNumber, c.PerPage, c.TickerTime
-
-	ticker := time.NewTicker(time.Millisecond * tickTime)
+	c := s.config.DepositStreamingOpts()
+	fromBN, perPage := c.FromBlockNumber, c.PerPage
+	ticker := time.NewTicker(c.TickerTime)
 
 	for i := fromBN; i < toBN; i += perPage {
 		end := i + perPage
@@ -89,11 +88,11 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 			i -= perPage
 			continue
 		}
-		s.logger.Info("iterator:", iter)
+		s.logger.Info("Current Block: %d\n", i)
 
 		for iter.Next() {
 			event := iter.Event
-			s.logger.Info("event:", event)
+			s.logger.Infof("User address %v, Deposit amount: %v, Token address: %v, isRemoved: %t\n", event.UserAddress, event.TokenAddress, event.DepositAmount, event.Raw.Removed)
 
 			if event.Raw.Removed {
 				s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
