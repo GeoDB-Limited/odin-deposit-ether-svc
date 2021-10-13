@@ -88,7 +88,7 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 			i -= perPage
 			continue
 		}
-		s.logger.Info("Current Block: %d\n", i)
+		s.logger.Infof("Current Block: %d\n", i)
 
 		for iter.Next() {
 			event := iter.Event
