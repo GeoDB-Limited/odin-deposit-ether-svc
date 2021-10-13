@@ -107,7 +107,7 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 				TokenPrecision:  int64(event.TokenPrecision),
 			}
 		}
-		if toBN < end {
+		if toBN <= end {
 			toBN, err = s.ethereum.BlockNumber(s.context)
 			if err != nil {
 				s.logger.Fatal(err, "failed to get block number")
