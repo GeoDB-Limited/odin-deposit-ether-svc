@@ -113,6 +113,10 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 				s.logger.Fatal(err, "failed to get block number")
 			}
 		}
+		
+		if toBN > end + perPage {
+			continue
+		}
 
 		<-ticker.C
 	}
