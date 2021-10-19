@@ -107,19 +107,23 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 				TokenPrecision:  int64(event.TokenPrecision),
 			}
 		}
-		if toBN <= end {
+		if end >= toBN {
+			s.logger.Infof("end: %d > toBN: %d\n", end, toBN)
 			toBN, err = s.ethereum.BlockNumber(s.context)
 			if err != nil {
 				s.logger.Fatal(err, "failed to get block number")
 			}
+			continue
 		}
-		
-		if toBN > end + perPage {
+
+		if toBN >= end {
 			continue
 		}
 
 		<-ticker.C
 	}
+	s.logger.Infof("loop is end\ntoBN: %d\n", toBN)
+
 }
 
 // processTransfer handles events from ethereum smart contract
