@@ -76,54 +76,75 @@ func (s *Service) subscribeERC20Transfer(withdrawals chan<- WithdrawalDetails) {
 	}
 	c := s.config.DepositStreamingOpts()
 	fromBN, perPage := c.FromBlockNumber, c.PerPage
-	ticker := time.NewTicker(c.TickerTime)
 
-	for i := fromBN; i < toBN; i += perPage {
-		end := i + perPage
+	for start := fromBN; start < toBN; start += perPage {
+		end := start + perPage
+		if end > toBN {
+			end = toBN
+		}
 		iter, err := s.contract.FilterTokensDeposited(
-			&bind.FilterOpts{Start: i, End: &end, Context: s.context}, nil, nil,
+			&bind.FilterOpts{Start: start, End: &end, Context: s.context}, nil, nil,
 		)
 		if err != nil {
 			s.logger.WithError(err).Error("failed to get contract events")
-			i -= perPage
+			start -= perPage
 			continue
 		}
-		s.logger.Infof("Current Block: %d\n", i)
+		s.logger.Infof("Current Block: %d\n", start)
 
-		for iter.Next() {
-			event := iter.Event
-			s.logger.Infof("User address %v, Deposit amount: %v, Token address: %v, isRemoved: %t\n", event.UserAddress, event.TokenAddress, event.DepositAmount, event.Raw.Removed)
+		s.handleEvents(withdrawals, iter)
+	}
+	s.logger.Infof("Old evets proccessed\ntoBN: %d\n", toBN)
 
-			if event.Raw.Removed {
-				s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
-				continue
-			}
-			withdrawals <- WithdrawalDetails{
-				EthereumAddress: event.UserAddress,
-				OdinAddress:     event.OdinAddress,
-				DepositAmount:   event.DepositAmount,
-				TokenAddress:    event.TokenAddress,
-				TokenSymbol:     event.Symbol,
-				TokenPrecision:  int64(event.TokenPrecision),
-			}
-		}
-		if end >= toBN {
-			s.logger.Infof("end: %d > toBN: %d\n", end, toBN)
+
+	fromBN = toBN
+	ticker := time.NewTicker(c.TickerTime)
+	for {
+		select {
+		case <-ticker.C:
 			toBN, err = s.ethereum.BlockNumber(s.context)
 			if err != nil {
-				s.logger.Fatal(err, "failed to get block number")
+				s.logger.WithError(err).Error("failed to get block number")
+				continue
 			}
-			continue
-		}
 
-		if toBN >= end {
-			continue
-		}
+			if toBN > fromBN + perPage {
+				toBN = fromBN + perPage
+			}
 
-		<-ticker.C
+			iter, err := s.contract.FilterTokensDeposited(
+				&bind.FilterOpts{Start: fromBN, End: &toBN, Context: s.context}, nil, nil,
+			)
+			if err != nil {
+				s.logger.WithError(err).Error("failed to get contract events")
+				continue
+			}
+			s.logger.Infof("Processing events from block: %d\n", fromBN)
+
+			s.handleEvents(withdrawals, iter)
+			fromBN = toBN
+		}
 	}
-	s.logger.Infof("loop is end\ntoBN: %d\n", toBN)
+}
 
+func (s *Service) handleEvents(withdrawals chan<- WithdrawalDetails, iter *generated.BridgeTokensDepositedIterator){
+	for iter.Next() {
+		event := iter.Event
+		s.logger.Infof("User address %v, Deposit amount: %v, Token address: %v, isRemoved: %t\n", event.UserAddress, event.TokenAddress, event.DepositAmount, event.Raw.Removed)
+
+		if event.Raw.Removed {
+			s.logger.WithField("block_hash", event.Raw.BlockHash).Warn("Log was reverted due to a chain reorganisation")
+			continue
+		}
+		withdrawals <- WithdrawalDetails{
+			EthereumAddress: event.UserAddress,
+			OdinAddress:     event.OdinAddress,
+			DepositAmount:   event.DepositAmount,
+			TokenAddress:    event.TokenAddress,
+			TokenSymbol:     event.Symbol,
+			TokenPrecision:  int64(event.TokenPrecision),
+		}
+	}
 }
 
 // processTransfer handles events from ethereum smart contract
