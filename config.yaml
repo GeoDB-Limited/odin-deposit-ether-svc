@@ -28,3 +28,7 @@ deploy:
   supported_tokens:
     - "SUPPORTED TOKEN ADDRESS"
     - "ANOTHER ONE SUPPORTED TOKEN ADDRESS"
+deposit:
+  from_block_number: 11881039
+  per_page: 500
+  ticker_time: 1m
